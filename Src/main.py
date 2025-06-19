@@ -17,10 +17,12 @@ def main():
     print("==========SGSystem Start==========")
 
     # GPTSystemの初期化
-    AgentInitialize()
+ #   AgentInitialize()
 
     # MetaTraderSystemの初期化
-    MTManagerInitialize()
+    isSuccess =  MTManagerInitialize()
+    if not isSuccess:
+        quit()
 
     while True:
         print('processing...')

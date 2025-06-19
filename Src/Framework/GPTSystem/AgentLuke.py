@@ -12,18 +12,18 @@ def AgentInitialize():
     print("Agent Initialize")
 
     # パーソナルデータの構築
-    with open("lukes_personality_20250619.txt", "r", encoding="utf-8") as f:
-    system_prompt = f.read()
+    #with open("lukes_personality_20250619.txt", "r", encoding="utf-8") as f:
+    #system_prompt = f.read()
 
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": "現在のドル円相場の見通しは？"}
-    ]
+    #messages = [
+    #    {"role": "system", "content": system_prompt},
+    #    {"role": "user", "content": "現在のドル円相場の見通しは？"}
+    #]
 
-    response = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=messages
-    )
+    #response = openai.ChatCompletion.create(
+    #    model="gpt-4",
+    #    messages=messages
+    #)
 
     # 関数で行う処理
     # APIキーの設定
