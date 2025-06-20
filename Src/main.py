@@ -3,6 +3,7 @@ import keyboard
 
 from Framework.GPTSystem.AgentLuke import AgentInitialize
 from Framework.MTSystem.MTManager import MTManager_Initialize
+from Framework.MTSystem.MTManager import MTManager_UpadteIndicators
 
 def main():
     # 各システムの初期化
@@ -12,10 +13,11 @@ def main():
  #   AgentInitialize()
 
     # MetaTraderSystemの初期化
-#    isSuccess =  MTManager_Initialize()
-#    if not isSuccess:
-#        quit()
+    isSuccess =  MTManager_Initialize()
+    if not isSuccess:
+        quit()
 
+    MTManager_UpadteIndicators()
     while True:
         print('processing...')
         
