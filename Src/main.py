@@ -1,16 +1,8 @@
-#import sys
 import time
-
-# 追加するディレクトリを指定
-#import os
-
-#new_path = os.path.join(os.getenv('PYTHON_ROOT'),"site-packages")
-# sys.pathに新しいパスを追加
-#sys.path.append(new_path)
-from Framework.GPTSystem.AgentLuke import AgentInitialize
-from Framework.MTSystem.MTManager import MTManagerInitialize
-
 import keyboard
+
+from Framework.GPTSystem.AgentLuke import AgentInitialize
+from Framework.MTSystem.MTManager import MTManager_Initialize
 
 def main():
     # 各システムの初期化
@@ -20,9 +12,9 @@ def main():
  #   AgentInitialize()
 
     # MetaTraderSystemの初期化
-    isSuccess =  MTManagerInitialize()
-    if not isSuccess:
-        quit()
+#    isSuccess =  MTManager_Initialize()
+#    if not isSuccess:
+#        quit()
 
     while True:
         print('processing...')
