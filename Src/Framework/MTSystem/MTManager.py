@@ -26,7 +26,7 @@ def MTManager_Initialize():
     return True
 
 
-def MTManager_UpadteIndicators(days_back=600):
+def MTManager_UpdateIndicators(days_back=600):
     """
     テクニカル指標の更新、チャート描画、LSTM学習実行までを一括で行う。
     :param days_back: 取得する日足データの過去日数（営業日ベース）
