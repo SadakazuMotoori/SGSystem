@@ -1,7 +1,7 @@
 import time
 import keyboard
 
-from Framework.MTSystem.MTManager import MTManager_Initialize, MTManager_UpadteIndicators
+from Framework.MTSystem.MTManager       import MTManager_Initialize, MTManager_UpadteIndicators
 from Framework.ForecastSystem.LSTMModel import train_and_predict_lstm
 
 def main():

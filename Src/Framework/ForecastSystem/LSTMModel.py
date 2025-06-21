@@ -1,11 +1,11 @@
-import numpy as np
-import pandas as pd
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-import matplotlib.pyplot as plt
-from keras.models import Sequential
-from keras.layers import LSTM, Dense, Dropout
-from keras.callbacks import EarlyStopping
+import numpy                as np
+import matplotlib.pyplot    as plt
+
+from sklearn.preprocessing  import MinMaxScaler
+from sklearn.metrics        import mean_squared_error, mean_absolute_error, r2_score
+from keras.models           import Sequential
+from keras.layers           import LSTM, Dense, Dropout
+from keras.callbacks        import EarlyStopping
 
 # ======================
 # シーケンス生成関数
@@ -105,8 +105,7 @@ def train_and_predict_lstm(df, evaluate=True):
     next_input = X[-1].reshape(1, X.shape[1], X.shape[2])
     next_scaled = model.predict(next_input)
     predicted_close = scaler.inverse_transform(
-        np.concatenate([next_scaled, np.zeros((1, X.shape[2] - 1))], axis=1)
-    )[0][0]
+        np.concatenate([next_scaled, np.zeros((1, X.shape[2] - 1))], axis=1))[0][0]
 
     print(f"[PREDICTED] 翌日の予測終値: {predicted_close:.3f}")
     return predicted_close

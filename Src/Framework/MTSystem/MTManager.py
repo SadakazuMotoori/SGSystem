@@ -1,13 +1,12 @@
 import os
-import MetaTrader5 as mt5
-import pandas as pd
-import mplfinance as mpf
+import MetaTrader5  as mt5
+import pandas       as pd
+import mplfinance   as mpf
 import ta
-from datetime import datetime, timedelta
+from datetime                           import datetime, timedelta
 from Framework.ForecastSystem.LSTMModel import train_and_predict_lstm
 
 symbol = "USDJPY"  # 利用する通貨ペア
-
 
 def MTManager_Initialize():
     """MT5へ接続を試み、成功・失敗を表示"""
