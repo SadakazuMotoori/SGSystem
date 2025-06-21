@@ -1,7 +1,7 @@
 import time
 import keyboard
 
-from Framework.MTSystem.MTManager       import MTManager_Initialize, MTManager_UpadteIndicators
+from Framework.MTSystem.MTManager import MTManager_Initialize, MTManager_UpdateIndicators
 from Framework.ForecastSystem.LSTMModel import train_and_predict_lstm
 
 def main():
@@ -13,7 +13,7 @@ def main():
         quit()
 
     print("[INFO] インジケータ更新と学習開始")
-    df = MTManager_UpadteIndicators()
+    df = MTManager_UpdateIndicators()
 
     # LSTMによる予測処理（翌日の終値）
     train_and_predict_lstm(df)
