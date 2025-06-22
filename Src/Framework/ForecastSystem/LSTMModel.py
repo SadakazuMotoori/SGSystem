@@ -50,7 +50,7 @@ def build_lstm_model(input_shape):
 # モデル評価関数
 # - RMSE, MAE, R²の3指標で性能評価
 # ===================================================
-def evaluate_model(y_true, y_pred):
+def evaluate_model(y_true, y_pred, show_plt):
     rmse = np.sqrt(mean_squared_error(y_true, y_pred))
     mae = mean_absolute_error(y_true, y_pred)
     r2 = r2_score(y_true, y_pred)
@@ -60,22 +60,23 @@ def evaluate_model(y_true, y_pred):
     print(f"MAE:  {mae:.4f}")
     print(f"R^2:  {r2:.4f}")
 
-    plt.figure(figsize=(10, 5))
-    plt.plot(y_true, label="Actual")
-    plt.plot(y_pred, label="Predicted")
-    plt.title("Actual vs Predicted (Validation)")
-    plt.xlabel("Time")
-    plt.ylabel("Scaled Close")
-    plt.legend()
-    plt.grid(True)
-    plt.tight_layout()
-    plt.show()
+    if(show_plt):
+        plt.figure(figsize=(10, 5))
+        plt.plot(y_true, label="Actual")
+        plt.plot(y_pred, label="Predicted")
+        plt.title("Actual vs Predicted (Validation)")
+        plt.xlabel("Time")
+        plt.ylabel("Scaled Close")
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
 
 # ===================================================
 # メイン関数：LSTMモデル学習＆5日先まで予測
 # - 実績30日＋予測5日をチャートで可視化
 # ===================================================
-def train_and_predict_lstm(df, evaluate=True):
+def train_and_predict_lstm(df, show_plt=False, evaluate=True):
     print("[INFO] 欠損値除去中...")
     df = df.dropna().copy()
     print(df.isnull().sum())
@@ -109,7 +110,7 @@ def train_and_predict_lstm(df, evaluate=True):
     val_pred = model.predict(X_val)
 
     if evaluate:
-        evaluate_model(y_val, val_pred)
+        evaluate_model(y_val, val_pred, show_plt)
 
     # ======================
     # 5日間の逐次予測処理
@@ -162,16 +163,17 @@ def train_and_predict_lstm(df, evaluate=True):
     last_date = df.index[-1].date()
     future_dates = [last_date + pd.Timedelta(days=i) for i in range(1, 6)]
 
-    plt.figure(figsize=(12, 6))
-    plt.plot(past_dates, past_values, label="Actual Close", color="blue", marker="o")
-    plt.plot(future_dates, predictions, label="Predicted Close", color="red", linestyle="--", marker="x")
-    plt.axvline(past_dates[-1], color="gray", linestyle=":", label="Prediction Start")
-    plt.title("USD/JPY Close Price: Past 30 Days + 5-Day Forecast")
-    plt.xlabel("Date")
-    plt.ylabel("Close Price")
-    plt.legend()
-    plt.grid(True)
-    plt.tight_layout()
-    plt.show()
+    if(show_plt):
+        plt.figure(figsize=(12, 6))
+        plt.plot(past_dates, past_values, label="Actual Close", color="blue", marker="o")
+        plt.plot(future_dates, predictions, label="Predicted Close", color="red", linestyle="--", marker="x")
+        plt.axvline(past_dates[-1], color="gray", linestyle=":", label="Prediction Start")
+        plt.title("USD/JPY Close Price: Past 30 Days + 5-Day Forecast")
+        plt.xlabel("Date")
+        plt.ylabel("Close Price")
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
 
     return predictions

@@ -40,7 +40,7 @@ def MTManager_Initialize():
 # - 最新日から過去へ指定数分取得（営業日ベース）
 # - RSI・MACD・サポレジを計算し、チャートを表示
 # ===================================================
-def MTManager_UpdateIndicators(days_back=600):
+def MTManager_UpdateIndicators(days_back=600, show_prot = False):
     print("[INFO] インジケータ更新と学習開始")
 
     # MT5からローソク足データを取得（最新からdays_back件分）
@@ -82,17 +82,18 @@ def MTManager_UpdateIndicators(days_back=600):
         mpf.make_addplot(df["MACD_diff"], panel=2, type='bar', color='dimgray', alpha=0.5)
     ]
 
-    mpf.plot(df,
-             type='candle',
-             style='charles',
-             mav=(5, 25, 75),
-             volume=True,
-             addplot=apds,
-             panel_ratios=(4, 1, 1),
-             title='USD/JPY - MA + RSI + MACD',
-             ylabel='Price',
-             ylabel_lower='Volume',
-             figsize=(14, 10))
+    if(show_prot):
+        mpf.plot(df,
+                type='candle',
+                style='charles',
+                mav=(5, 25, 75),
+                volume=True,
+                addplot=apds,
+                panel_ratios=(4, 1, 1),
+                title='USD/JPY - MA + RSI + MACD',
+                ylabel='Price',
+                ylabel_lower='Volume',
+                figsize=(14, 10))
 
     # ===================================================
     # LSTMモデル実行（予測＆チャート表示）

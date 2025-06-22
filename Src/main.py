@@ -16,7 +16,7 @@ def main():
     df = MTManager_UpdateIndicators()
 
     # LSTMによる予測処理（翌日の終値）
-    train_and_predict_lstm(df)
+    train_and_predict_lstm(df,True)
 
     # ESCキーで終了待ち
     while True:
