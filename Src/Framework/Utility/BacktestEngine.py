@@ -24,6 +24,14 @@ def run_backtest(df: pd.DataFrame, holding_days: int = 3, rsi_threshold: float =
         success = False
         exit_price = df.iloc[i + holding_days]["close"]
 
+        # === [NEW] 予測終値と誤差のログ出力 ===
+        if "predicted_close" in df.columns:
+            predicted_close = df.iloc[i]["predicted_close"]
+            actual_close = df.iloc[i + holding_days]["close"]
+            error = predicted_close - actual_close
+            print(f"[PREDICT] {df.index[i]} → Predict: {predicted_close:.3f} | Actual: {actual_close:.3f} | Error: {error:+.3f}")
+        # ==================================
+
         # RSIが閾値を超えたらそこで利確
         for j in range(1, holding_days + 1):
             if df.iloc[i + j]["RSI_14"] >= rsi_threshold:
@@ -44,6 +52,7 @@ def run_backtest(df: pd.DataFrame, holding_days: int = 3, rsi_threshold: float =
             loss_trades += 1
             entry_colors.append('red')
 
+        print("[DEBUG] df.columns:", df.columns)
         print(f"[Entry] {entry_date.date()} Close={entry_price:.2f} RSI={df.iloc[i]['RSI_14']:.1f} -> Exit={exit_price:.2f} {'✅' if success else '❌'}")
 
     # チャート表示（1回だけ）

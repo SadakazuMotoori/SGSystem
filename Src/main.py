@@ -1,3 +1,4 @@
+import numpy                                as np
 import time
 import keyboard
 
@@ -28,6 +29,10 @@ def main():
     # Phase-A 通過後、学習と予測へ
     # LSTMによる予測処理（翌日の終値）
     predicted_prices = train_and_predict_lstm(df,True)
+    # 例: 過去90日を使って予測 → 予測値は末尾だけ
+    #predicted_prices は一部期間分しか無いので、NaN埋めで全体長に合わせる
+    df["predicted_close"] = np.nan
+    df.loc[df.index[-len(predicted_prices):], "predicted_close"] = predicted_prices
 
     # ======== バックテスト開始 ========
     print("[INFO] バックテスト開始中...")
