@@ -1,8 +1,9 @@
 import time
 import keyboard
 
-from Framework.MTSystem.MTManager import MTManager_Initialize, MTManager_UpdateIndicators
-from Framework.ForecastSystem.LSTMModel import train_and_predict_lstm
+from Framework.MTSystem.MTManager           import MTManager_Initialize, MTManager_UpdateIndicators
+from Framework.ForecastSystem.LSTMModel     import train_and_predict_lstm
+from Framework.ForecastSystem.SignalEngine  import PhaseA_Filter
 
 def main():
     print("==========SGSystem Start==========")
@@ -15,6 +16,13 @@ def main():
     print("[INFO] インジケータ更新と学習開始")
     df = MTManager_UpdateIndicators()
 
+    # Phase-A: 環境認識＋ボラ判定
+    if not PhaseA_Filter(df):
+        print("[INFO] Phase-A 不通過：環境またはボラティリティ条件が一致せず")
+        return  # 以降の処理は中断
+
+    # Phase-A 通過後、学習と予測へ
+    print("[INFO] Phase-A 通過：次フェーズへ進行")
     # LSTMによる予測処理（翌日の終値）
     train_and_predict_lstm(df,True)
 

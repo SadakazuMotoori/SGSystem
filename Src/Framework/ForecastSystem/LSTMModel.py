@@ -21,12 +21,19 @@ from keras.callbacks        import EarlyStopping
 # - スケーリングも同時に実行
 # ===================================================
 def create_sequences(df, sequence_length=150, target_column="close"):
-    feature_columns = df.columns.tolist()
-    feature_columns.remove(target_column)
-    feature_columns = [target_column] + feature_columns
+    features = [
+        "open", "high", "low", "close", "volume", "spread", "real_volume",
+        "RSI_14", "MACD", "MACD_signal", "MACD_diff",
+        "Support", "Resistance",
+        "SMA_50", "ATR_14"  # ← 有効なトレンド・ボラ指標
+    ]
+    # 特徴量の並び順を「target_columnが先頭」に来るように調整
+    feature_columns = [target_column] + [f for f in features if f != target_column]
+    data = df[feature_columns]
 
+    # スケーリング
     scaler = MinMaxScaler()
-    scaled_data = scaler.fit_transform(df[feature_columns])
+    scaled_data = scaler.fit_transform(data)
 
     X, y = [], []
     for i in range(sequence_length, len(df)):

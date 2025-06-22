@@ -5,12 +5,13 @@
 # - LSTMモデルに渡すためのインジケータ追加・可視化も担う
 # ===================================================
 
-import os
-import MetaTrader5  as mt5
-import pandas       as pd
-import mplfinance   as mpf
-import ta
-from datetime       import datetime, timedelta
+import  os
+import  MetaTrader5                     as mt5
+import  pandas                          as pd
+import  mplfinance                      as mpf
+import  ta
+from    ta.volatility                   import AverageTrueRange
+from datetime                           import datetime, timedelta
 from Framework.ForecastSystem.LSTMModel import train_and_predict_lstm
 
 # ---------------------------------------------------
@@ -40,7 +41,7 @@ def MTManager_Initialize():
 # - 最新日から過去へ指定数分取得（営業日ベース）
 # - RSI・MACD・サポレジを計算し、チャートを表示
 # ===================================================
-def MTManager_UpdateIndicators(days_back=600, show_prot = False):
+def MTManager_UpdateIndicators(days_back=600, show_prot = True):
     print("[INFO] インジケータ更新と学習開始")
 
     # MT5からローソク足データを取得（最新からdays_back件分）
@@ -67,6 +68,15 @@ def MTManager_UpdateIndicators(days_back=600, show_prot = False):
 
     df["Support"] = df["low"].rolling(window=10).min()
     df["Resistance"] = df["high"].rolling(window=10).max()
+
+    # SMAを追加（Phase-Aフィルタで必要）
+    df["SMA_50"]  = df["close"].rolling(window=50).mean()
+    # モデル精度への影響が大きいため除外
+    #df["SMA_200"] = df["close"].rolling(window=200).mean()
+
+    # 既存の指標計算（RSI, MACDなど）に加えて
+    atr_indicator = AverageTrueRange(high=df["high"], low=df["low"], close=df["close"], window=14)
+    df["ATR_14"] = atr_indicator.average_true_range()
 
     # ===================================================
     # チャート描画（ローソク足＋インジケータ）
