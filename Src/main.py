@@ -3,7 +3,7 @@ import keyboard
 
 from Framework.MTSystem.MTManager           import MTManager_Initialize, MTManager_UpdateIndicators
 from Framework.ForecastSystem.LSTMModel     import train_and_predict_lstm
-from Framework.ForecastSystem.SignalEngine  import PhaseA_Filter
+from Framework.ForecastSystem.SignalEngine  import PhaseA_Filter, PhaseB_Trigger
 
 def main():
     print("==========SGSystem Start==========")
@@ -21,11 +21,17 @@ def main():
         print("[INFO] Phase-A 不通過：環境またはボラティリティ条件が一致せず")
         return  # 以降の処理は中断
 
-    # Phase-A 通過後、学習と予測へ
     print("[INFO] Phase-A 通過：次フェーズへ進行")
-    # LSTMによる予測処理（翌日の終値）
-    train_and_predict_lstm(df,True)
 
+    # Phase-A 通過後、学習と予測へ
+    # LSTMによる予測処理（翌日の終値）
+    predicted_prices = train_and_predict_lstm(df,True)
+
+    print("[INFO] Phase-B シグナル判定")
+    signal = PhaseB_Trigger(predicted_prices, df)
+    print(f"[SIGNAL] Phase-B 判定結果: {signal}")
+    # TODO: signal をもとに売買処理 or 次フェーズへ
+    
     # ESCキーで終了待ち
     while True:
         print('[INFO] 処理待機中（ESCキーで終了）...')
