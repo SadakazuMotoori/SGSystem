@@ -25,22 +25,28 @@ def create_sequences(df, sequence_length=150, target_column="close"):
         "open", "high", "low", "close", "volume", "spread", "real_volume",
         "RSI_14", "MACD", "MACD_signal", "MACD_diff",
         "Support", "Resistance",
-        "SMA_50", "ATR_14"  # ← 有効なトレンド・ボラ指標
+        "SMA_50", "ATR_14", "delta_close"
     ]
     # 特徴量の並び順を「target_columnが先頭」に来るように調整
-    feature_columns = [target_column] + [f for f in features if f != target_column]
-    data = df[feature_columns]
+    feature_columns = [f for f in features if f != target_column]
 
-    # スケーリング
-    scaler = MinMaxScaler()
-    scaled_data = scaler.fit_transform(data)
+    # スケーリング：目的変数とその他の特徴量を分離して処理（←変更点）
+    target_scaler = MinMaxScaler()
+    feature_scaler = MinMaxScaler()
 
+    y_scaled = target_scaler.fit_transform(df[[target_column]])
+    X_scaled = feature_scaler.fit_transform(df[feature_columns])
+
+    # スケーリング結果を1つのDataFrameに再構成（←構成変更）
+    scaled_df = np.concatenate([y_scaled, X_scaled], axis=1)
+
+    # シーケンス生成
     X, y = [], []
     for i in range(sequence_length, len(df)):
-        X.append(scaled_data[i-sequence_length:i])
-        y.append(scaled_data[i][0])
+        X.append(scaled_df[i-sequence_length:i])
+        y.append(scaled_df[i][0])  # 目的変数は先頭列にある
 
-    return np.array(X), np.array(y), scaler
+    return np.array(X), np.array(y), target_scaler, feature_scaler  # ←戻り値変更
 
 # ===================================================
 # LSTMモデル構築関数
@@ -71,9 +77,9 @@ def evaluate_model(y_true, y_pred, show_plt):
         plt.figure(figsize=(10, 5))
         plt.plot(y_true, label="Actual")
         plt.plot(y_pred, label="Predicted")
-        plt.title("Actual vs Predicted (Validation)")
+        plt.title("Actual vs Predicted Close Price (Validation)")
         plt.xlabel("Time")
-        plt.ylabel("Scaled Close")
+        plt.ylabel("Close Price (JPY)")
         plt.legend()
         plt.grid(True)
         plt.tight_layout()
@@ -89,8 +95,7 @@ def train_and_predict_lstm(df, show_plt=False, evaluate=True):
     print(df.isnull().sum())
 
     print("[INFO] モデル構築と学習開始")
-    df = df.dropna().copy()
-    X, y, scaler = create_sequences(df)
+    X, y, target_scaler, feature_scaler = create_sequences(df)
 
     print(f"X shape: {X.shape}")
     print(f"y shape: {y.shape}")
@@ -117,7 +122,10 @@ def train_and_predict_lstm(df, show_plt=False, evaluate=True):
     val_pred = model.predict(X_val)
 
     if evaluate:
-        evaluate_model(y_val, val_pred, show_plt)
+        # y_val, val_pred はスケール済 → 逆スケーリング
+        y_val_actual = target_scaler.inverse_transform(y_val.reshape(-1, 1)).flatten()
+        val_pred_actual = target_scaler.inverse_transform(val_pred.reshape(-1, 1)).flatten()
+        evaluate_model(y_val_actual, val_pred_actual, show_plt)
 
     # ======================
     # 5日間の逐次予測処理
@@ -126,7 +134,7 @@ def train_and_predict_lstm(df, show_plt=False, evaluate=True):
     future_df = df.copy()
 
     for i in range(5):
-        X, y, scaler = create_sequences(future_df)
+        X, y, target_scaler, feature_scaler = create_sequences(future_df)
         model = build_lstm_model((X.shape[1], X.shape[2]))
         early_stop = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
         model.fit(
@@ -141,8 +149,9 @@ def train_and_predict_lstm(df, show_plt=False, evaluate=True):
         # 直近系列から1ステップ予測
         next_input = X[-1].reshape(1, X.shape[1], X.shape[2])
         next_scaled = model.predict(next_input)
-        next_features = np.concatenate([next_scaled, np.zeros((1, X.shape[2] - 1))], axis=1)
-        predicted_close = scaler.inverse_transform(next_features)[0][0]
+
+        # スケールされた値（終値1点）→ 実価格に逆変換
+        predicted_close = target_scaler.inverse_transform(next_scaled)[0][0]
         predictions.append(predicted_close)
 
         # future_dfに仮想的に追加（特徴量は直前値を流用）
@@ -170,7 +179,7 @@ def train_and_predict_lstm(df, show_plt=False, evaluate=True):
     last_date = df.index[-1].date()
     future_dates = [last_date + pd.Timedelta(days=i) for i in range(1, 6)]
 
-    if(show_plt):
+    if show_plt:
         plt.figure(figsize=(12, 6))
         plt.plot(past_dates, past_values, label="Actual Close", color="blue", marker="o")
         plt.plot(future_dates, predictions, label="Predicted Close", color="red", linestyle="--", marker="x")

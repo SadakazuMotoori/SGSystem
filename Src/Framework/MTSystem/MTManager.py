@@ -78,6 +78,9 @@ def MTManager_UpdateIndicators(days_back=600, show_prot = True):
     atr_indicator = AverageTrueRange(high=df["high"], low=df["low"], close=df["close"], window=14)
     df["ATR_14"] = atr_indicator.average_true_range()
 
+    # 🔽 追加（変化率指標）
+    df["delta_close"] = df["close"].diff().fillna(0)
+
     # ===================================================
     # チャート描画（ローソク足＋インジケータ）
     # ===================================================
