@@ -29,36 +29,33 @@ def PhaseA_Filter(df: pd.DataFrame) -> bool:
         print(f"[PhaseA_Filter] エラー: {e}")
         return False
     
-def PhaseB_Trigger(predicted_close: list[float], df: pd.DataFrame) -> bool:
+def PhaseB_Trigger(predicted_close: list[float], df: pd.DataFrame) -> str:
     """
-    Phase-B: 予測とオシレータを使った仕掛け判定
-    Args:
-        predicted_close: LSTMで予測された終値（例：5日分）
-        df: 最新の指標付きDataFrame（最新行のみ参照）
-
+    Phase-B: 予測とオシレータを使った仕掛け判定（条件緩和版）
     Returns:
-        bool: Trueならトリガ通過（仕掛け可能）、Falseで保留
+        "BUY", "SELL", or "NO-TRADE"
     """
     try:
         latest = df.iloc[-1]
 
-        # ① 予測の方向性を見る
+        # --- ① 予測の方向性をチェック ---
         direction_score = sum([predicted_close[i] < predicted_close[i + 1] for i in range(len(predicted_close) - 1)])
-        bullish_pred = direction_score >= 3  # 上昇3日以上
-        bearish_pred = direction_score <= 1  # 下降3日以上
+        bullish_pred = direction_score >= 3
+        bearish_pred = direction_score <= 1
 
-        # ② RSIとMACD
+        # --- ② RSIとMACD条件（緩和） ---
         rsi = latest["RSI_14"]
         macd = latest["MACD"]
         macd_signal = latest["MACD_signal"]
 
-        bullish_osc = rsi < 30 and macd > macd_signal
-        bearish_osc = rsi > 70 and macd < macd_signal
+        # 緩和条件：
+        # - ロング: RSIが40未満（以前は30）、MACD > Signal
+        # - ショート: RSIが60超（以前は70）、MACD < Signal
+        bullish_osc = rsi < 40 and macd > macd_signal
+        bearish_osc = rsi > 60 and macd < macd_signal
 
-        # ロング条件
         if bullish_pred and bullish_osc:
             return "BUY"
-        # ショート条件
         elif bearish_pred and bearish_osc:
             return "SELL"
         else:

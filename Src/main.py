@@ -5,6 +5,8 @@ from Framework.MTSystem.MTManager           import MTManager_Initialize, MTManag
 from Framework.ForecastSystem.LSTMModel     import train_and_predict_lstm
 from Framework.ForecastSystem.SignalEngine  import PhaseA_Filter, PhaseB_Trigger
 
+from Framework.Utility.BacktestEngine       import run_backtest
+
 def main():
     print("==========SGSystem Start==========")
 
@@ -26,6 +28,19 @@ def main():
     # Phase-A 通過後、学習と予測へ
     # LSTMによる予測処理（翌日の終値）
     predicted_prices = train_and_predict_lstm(df,True)
+
+    # ======== バックテスト開始 ========
+    print("[INFO] バックテスト開始中...")
+    backtest_result = run_backtest(df)
+    
+    print("\n[Backtest Result]")
+    print(f"Total Trades    : {backtest_result['total_trades']}")
+    print(f"Win Trades      : {backtest_result['win_trades']}")
+    print(f"Loss Trades     : {backtest_result['loss_trades']}")
+    print(f"Win Rate        : {backtest_result['win_rate']:.2f}%")
+    print(f"Average Profit  : {backtest_result['average_profit']:.3f} pips")
+    print(f"Max Drawdown    : {backtest_result['max_drawdown']:.3f} pips")
+    # ======== バックテスト終了 ========
 
     print("[INFO] Phase-B シグナル判定")
     signal = PhaseB_Trigger(predicted_prices, df)
