@@ -36,7 +36,8 @@ def main():
 
     # ======== バックテスト開始 ========
     print("[INFO] バックテスト開始中...")
-    backtest_result = run_backtest(df)
+    # バックテスト用：全期間の逐次予測値を生成
+    backtest_result = run_backtest(df, predicted_prices)
     
     print("\n[Backtest Result]")
     print(f"Total Trades    : {backtest_result['total_trades']}")
