@@ -15,9 +15,21 @@ def is_buy_signal(predicted_close, rsi, macd, macd_signal):
     bullish_osc = rsi < 70 and macd > macd_signal
     return bullish_pred and bullish_osc
 
+def is_sell_signal(predicted_close, rsi, macd, macd_signal):
+    """
+    Phase-B ロジックに準拠したSELL条件の判定
+    - RSIが30超（売られすぎでない状態）
+    - MACD < Signal
+    - 予測方向が下落傾向（5ステップ中3回以上下降）
+    """
+    direction_score = sum([predicted_close[i] > predicted_close[i + 1] for i in range(len(predicted_close) - 1)])
+    bearish_pred = direction_score >= 3
+    bearish_osc = rsi > 30 and macd < macd_signal
+    return bearish_pred and bearish_osc
+
 def run_backtest(df, predicted_close, period_days=3, rsi_exit_threshold=70):
     """
-    Phase-B ロジックに準拠したバックテストを実行
+    Phase-B ロジックに準拠したバックテストを実行（BUY/SELL対応）
     """
     total_trades = 0
     win_trades = 0
@@ -34,6 +46,7 @@ def run_backtest(df, predicted_close, period_days=3, rsi_exit_threshold=70):
         macd_signal = df.loc[i, "MACD_signal"]
         close_entry = df.loc[i, "close"]
 
+        # === BUYシグナル処理 ===
         if is_buy_signal(predicted_close, rsi, macd, macd_signal):
             total_trades += 1
             entry_price = close_entry
@@ -51,6 +64,11 @@ def run_backtest(df, predicted_close, period_days=3, rsi_exit_threshold=70):
                     total_profit += profit
                     win_trades += 1
                     success = True
+                    entry_logs.append({
+                        "date": df.loc[i + j, "time"],
+                        "entry_price": future_price,
+                        "type": "TP"
+                    })
                     break
 
             if not success:
@@ -62,6 +80,47 @@ def run_backtest(df, predicted_close, period_days=3, rsi_exit_threshold=70):
                 "date": df.loc[entry_index, "time"],
                 "entry_price": entry_price,
                 "type": "BUY",
+                "rsi": rsi,
+                "macd": macd,
+                "macd_signal": macd_signal,
+                "profit": profit,
+                "success": success
+            })
+
+        # === SELLシグナル処理 ===
+        elif is_sell_signal(predicted_close, rsi, macd, macd_signal):
+            total_trades += 1
+            entry_price = close_entry
+            entry_index = i
+            success = False
+
+            for j in range(1, period_days + 1):
+                future_rsi = df.loc[i + j, "RSI_14"]
+                future_price = df.loc[i + j, "close"]
+                drawdown = future_price - entry_price  # 逆方向のドローダウン
+                max_drawdown = max(max_drawdown, drawdown)
+
+                if future_rsi < 30:  # RSIが30以下なら利確
+                    profit = entry_price - future_price  # 高く売って安く買い戻す
+                    total_profit += profit
+                    win_trades += 1
+                    success = True
+                    entry_logs.append({
+                        "date": df.loc[i + j, "time"],
+                        "entry_price": future_price,
+                        "type": "TP"
+                    })
+                    break
+
+            if not success:
+                profit = entry_price - df.loc[i + period_days, "close"]
+                total_profit += profit
+                loss_trades += 1
+
+            entry_logs.append({
+                "date": df.loc[entry_index, "time"],
+                "entry_price": entry_price,
+                "type": "SELL",
                 "rsi": rsi,
                 "macd": macd,
                 "macd_signal": macd_signal,
@@ -98,70 +157,67 @@ def plot_entry_points_chart(df, entry_logs):
     ohlc = df[["open", "high", "low", "close", "volume"]]  # チャート描画用データ
 
     # === BUYエントリーの処理 ===
-    buys = [log for log in entry_logs if log["type"] == "BUY"]  # BUYログだけ抽出
+    buys = [log for log in entry_logs if log["type"] == "BUY"]
     buy_df = pd.DataFrame({
-        "date": pd.to_datetime([log["date"] for log in buys]),      # 日時（datetime型）
-        "price": [log["entry_price"] for log in buys]               # エントリー価格
+        "date": pd.to_datetime([log["date"] for log in buys]),
+        "price": [log["entry_price"] for log in buys]
     })
-    buy_df = buy_df[buy_df["date"].isin(ohlc.index)]  # OHLCに存在する日付のみ許可
-    x_buys = [ohlc.index.get_loc(date) for date in buy_df["date"]]  # index位置取得（x軸）
-    y_buys = buy_df["price"].values                                   # y軸は価格
+    buy_df = buy_df[buy_df["date"].isin(ohlc.index)]
+    x_buys = [ohlc.index.get_loc(date) for date in buy_df["date"]]
+    y_buys = buy_df["price"].values
     print(f"[DEBUG] BUY marker count after filtering: {len(buy_df)}")
 
     # === SELLエントリーの処理 ===
-    sells = [log for log in entry_logs if log["type"] == "SELL"]  # SELLログだけ抽出
+    sells = [log for log in entry_logs if log["type"] == "SELL"]
     sell_df = pd.DataFrame({
-        "date": pd.to_datetime([log["date"] for log in sells]),     # 日時（datetime型）
-        "price": [log["entry_price"] for log in sells]              # エントリー価格
+        "date": pd.to_datetime([log["date"] for log in sells]),
+        "price": [log["entry_price"] for log in sells]
     })
-    sell_df = sell_df[sell_df["date"].isin(ohlc.index)]  # OHLCに存在する日付のみ許可
-    x_sells = [ohlc.index.get_loc(date) for date in sell_df["date"]]  # index位置（x軸）
-    y_sells = sell_df["price"].values                                  # y軸は価格
+    sell_df = sell_df[sell_df["date"].isin(ohlc.index)]
+    x_sells = [ohlc.index.get_loc(date) for date in sell_df["date"]]
+    y_sells = sell_df["price"].values
     print(f"[DEBUG] SELL marker count after filtering: {len(sell_df)}")
 
-    # === データ整合性チェック ===
-    if len(x_buys) != len(y_buys) or len(x_sells) != len(y_sells):
+    # === TP（利確）マーカー処理 ===
+    take_profits = [log for log in entry_logs if log["type"] == "TP"]
+    tp_df = pd.DataFrame({
+        "date": pd.to_datetime([log["date"] for log in take_profits]),
+        "price": [log["entry_price"] for log in take_profits]
+    })
+    tp_df = tp_df[tp_df["date"].isin(ohlc.index)]
+    x_tp = [ohlc.index.get_loc(date) for date in tp_df["date"]]
+    y_tp = tp_df["price"].values
+    print(f"[DEBUG] TP marker count after filtering: {len(tp_df)}")
+
+    # === 整合性チェック ===
+    if len(x_buys) != len(y_buys) or len(x_sells) != len(y_sells) or len(x_tp) != len(y_tp):
         print("[ERROR] XとYの長さ不一致：描画中止")
         return
 
-    # === 表示対象が1件も無い場合の処理 ===
-    if len(x_buys) == 0 and len(x_sells) == 0:
-        print("[INFO] BUY/SELLエントリーが存在しません。チャート描画スキップ。")
+    if len(x_buys) == 0 and len(x_sells) == 0 and len(x_tp) == 0:
+        print("[INFO] BUY/SELL/TPエントリーが存在しません。チャート描画スキップ。")
         return
 
-    # --- チャート描画本体（mplfinance） ---
+    # --- チャート描画 ---
     fig, axlist = mpf.plot(
         ohlc,
-        type="candle",               # ローソク足
-        style="yahoo",               # スタイル
-        title="Entry Points Chart",  # タイトル
-        ylabel="Price",              # Y軸ラベル
-        volume=True,                 # 出来高表示
-        returnfig=True,              # matplotlibオブジェクトを返す
-        warn_too_much_data=len(ohlc)+1  # 警告抑制のためデータ数指定
+        type="candle",
+        style="yahoo",
+        title="Entry Points Chart",
+        ylabel="Price",
+        volume=True,
+        returnfig=True,
+        warn_too_much_data=len(ohlc)+1
     )
 
-    # --- マーカー描画（BUY / SELL） ---
-    ax_price = axlist[0]  # チャート本体の描画領域
+    ax_price = axlist[0]
 
     if len(x_buys) > 0:
-        ax_price.scatter(
-            x_buys, y_buys,
-            marker='^', color='green', s=100, label='BUY'
-        )
-
+        ax_price.scatter(x_buys, y_buys, marker='^', color='green', s=100, label='BUY')
     if len(x_sells) > 0:
-        ax_price.scatter(
-            x_sells, y_sells,
-            marker='v', color='red', s=100, label='SELL'
-        )
+        ax_price.scatter(x_sells, y_sells, marker='v', color='red', s=100, label='SELL')
+    if len(x_tp) > 0:
+        ax_price.scatter(x_tp, y_tp, marker='o', facecolors='none', edgecolors='blue', s=70, label='TP')
 
-    # --- 凡例表示 & 描画実行 ---
     ax_price.legend()
     plt.show()
-
-
-
-
-
-

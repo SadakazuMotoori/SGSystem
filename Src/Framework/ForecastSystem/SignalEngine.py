@@ -51,7 +51,7 @@ def PhaseB_Trigger(predicted_close: list[float], df: pd.DataFrame) -> str:
             predicted_close[i] < predicted_close[i + 1]
             for i in range(len(predicted_close) - 1)
         )
-        bullish_pred = direction_score >= 3
+        bullish_pred = direction_score >= 4
         bearish_pred = direction_score <= 1
 
         # --- ② RSI・MACD条件（緩和版） ---
@@ -63,9 +63,11 @@ def PhaseB_Trigger(predicted_close: list[float], df: pd.DataFrame) -> str:
             print("[PhaseB_Trigger] インジケータ欠損")
             return "NO-TRADE"
 
-        # 仮のテスト用：極端に緩く
-        bullish_osc = rsi < 80 and macd > macd_signal
-        bearish_osc = rsi > 20 and macd < macd_signal
+        # 緩和条件：
+        # - ロング: RSIが40未満（以前は30）、MACD > Signal
+        # - ショート: RSIが60超（以前は70）、MACD < Signal
+        bullish_osc = rsi < 35 and macd > macd_signal
+        bearish_osc = rsi > 65 and macd < macd_signal
 
         # --- Debug 出力（必要に応じて有効化） ---
         print(f"[DEBUG] RSI={rsi}, MACD={macd}, Signal={macd_signal}")
