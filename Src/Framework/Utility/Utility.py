@@ -32,28 +32,33 @@ class AlertManager:
 
 class NotificationManager :
   # publicクラスメンバ変数
-  loginID  =  ""
+  loginID   = ""
   loginPass = ""
+  myMailID  = ""
 
   def __init__(self):
-    self.loginID   = int(os.getenv('GMAIL_ADDR'))
-    self.loginPass = os.getenv('GMAIL_KEY')
+    self.loginID    = os.getenv('GMAIL_ADDR')
+    self.loginPass  = os.getenv('GMAIL_KEY')
+    self.myMailID   = os.getenv('MY_GMAIL_ADDR')
     print("[INFO] loginID = "   ,self.loginID)
     print("[INFO] loginPass = " ,self.loginPass)
-
-  def send_email(self, subject, body, to_email):
+    print("[INFO] myMailID = " ,self.myMailID)
+    
+  def send_email(self, subject, body):
     msg = MIMEMultipart()
     msg["From"]     = self.loginID
-    msg["To"]       = to_email
+    msg["To"]       = self.myMailID
     msg["Subject"]  = subject
     msg.attach(MIMEText(body, "plain"))
 
-#    try:
-#      server = smtplib.SMTP("smtp.gmail.com", 587)
-#      server.starttls()
-#      server.login(self.loginID, self.loginPass)
-#      server.send_message(msg)
-#      server.quit()
-#      print("[INFO] メール送信成功")
-#    except Exception as e:
-#      print(f"[ERROR] メール送信失敗: {e}")
+    try:
+      server = smtplib.SMTP("smtp.gmail.com", 587)
+      server.starttls()
+      server.login(self.loginID, self.loginPass)
+      server.send_message(msg)
+      server.quit()
+      print("[INFO] メール送信成功")
+    except Exception as e:
+      print("[ERROR] メール送信失敗:")
+      print(e)
+      print(type(e))
