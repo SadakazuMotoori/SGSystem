@@ -193,3 +193,65 @@ def train_and_predict_lstm(df, show_plt=False, evaluate=True):
         plt.show()
 
     return predictions
+
+def generate_predicted_series(df, sequence_length=90, target_column="close"):
+    """
+    指定されたDataFrameに対して逐次的にLSTMを使った1ステップ予測を行い、
+    全期間に対応する predicted_close 列を生成する。
+
+    Parameters:
+    - df: 入力DataFrame（インジケータ付き）
+    - sequence_length: 学習系列の長さ（過去90日など）
+    - target_column: 予測対象列（通常は "close"）
+
+    Returns:
+    - predicted_series: list[float] - dfと同じ長さの予測列（最初の sequence_length は None）
+    """
+    print("[INFO] 逐次予測シリーズ生成を開始...")
+    df = df.dropna().copy()  # 欠損除去
+
+    # === 特徴量とターゲットの準備 ===
+    features = [
+        "open", "high", "low", "close", "volume", "spread", "real_volume",
+        "RSI_14", "MACD", "MACD_signal", "MACD_diff",
+        "Support", "Resistance",
+        "SMA_50", "ATR_14", "delta_close"
+    ]
+    feature_columns = [f for f in features if f != target_column]
+
+    target_scaler = MinMaxScaler()
+    feature_scaler = MinMaxScaler()
+
+    y_scaled = target_scaler.fit_transform(df[[target_column]])
+    X_scaled = feature_scaler.fit_transform(df[feature_columns])
+    scaled_df = np.concatenate([y_scaled, X_scaled], axis=1)
+
+    # === モデル準備 ===
+    def build_lstm_model(input_shape):
+        model = Sequential()
+        model.add(LSTM(units=64, return_sequences=False, input_shape=input_shape))
+        model.add(Dropout(0.2))
+        model.add(Dense(1))
+        model.compile(optimizer='adam', loss='mean_squared_error')
+        return model
+
+    predicted_series = [None] * len(df)
+
+    for i in range(sequence_length, len(df)):
+        X_seq = scaled_df[i-sequence_length:i].reshape(1, sequence_length, -1)
+        y_target = scaled_df[i][0]
+
+        # ミニ学習セットを構築（sequence_length+1点だけ）
+        X_train = scaled_df[i-sequence_length:i].reshape(1, sequence_length, -1)
+        y_train = np.array([y_target])
+
+        model = build_lstm_model((sequence_length, X_train.shape[2]))
+        model.fit(X_train, y_train, epochs=10, batch_size=1, verbose=0)
+
+        y_pred_scaled = model.predict(X_seq)
+        y_pred_actual = target_scaler.inverse_transform(y_pred_scaled)[0][0]
+
+        predicted_series[i] = y_pred_actual
+
+    print("[INFO] 逐次予測完了。")
+    return predicted_series

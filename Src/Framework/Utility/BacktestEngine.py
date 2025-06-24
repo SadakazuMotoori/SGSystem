@@ -4,6 +4,8 @@ import mplfinance as mpf
 import matplotlib.pyplot as plt
 
 def is_buy_signal(predicted_close, rsi, macd, macd_signal):
+    if any(p is None or (isinstance(p, float) and np.isnan(p)) for p in predicted_close):
+        return False
     """
     Phase-B ロジックに準拠したBUY条件の判定
     - RSIが70未満
@@ -16,6 +18,8 @@ def is_buy_signal(predicted_close, rsi, macd, macd_signal):
     return bullish_pred and bullish_osc
 
 def is_sell_signal(predicted_close, rsi, macd, macd_signal):
+    if any(p is None or (isinstance(p, float) and np.isnan(p)) for p in predicted_close):
+        return False
     """
     Phase-B ロジックに準拠したSELL条件の判定
     - RSIが30超（売られすぎでない状態）
@@ -41,13 +45,21 @@ def run_backtest(df, predicted_close, period_days=3, rsi_exit_threshold=70):
     df = df.copy().reset_index(drop=False)
 
     for i in range(len(df) - period_days):
-        rsi = df.loc[i, "RSI_14"]
-        macd = df.loc[i, "MACD"]
+        rsi         = df.loc[i, "RSI_14"]
+        macd        = df.loc[i, "MACD"]
         macd_signal = df.loc[i, "MACD_signal"]
         close_entry = df.loc[i, "close"]
 
+        # --- 各エントリーポイントに対応する予測値（5日分）を抽出 ---
+        local_pred = predicted_close[i:i+5]
+
+        # --- 予測系列が5点揃っていない、または None/NaN が含まれる場合はスキップ ---
+        if len(local_pred) < 5 or any(p is None or (isinstance(p, float) and np.isnan(p)) for p in local_pred):
+            continue
+
         # === BUYシグナル処理 ===
-        if is_buy_signal(predicted_close, rsi, macd, macd_signal):
+        if is_buy_signal(local_pred, rsi, macd, macd_signal):
+            # エントリー記録
             total_trades += 1
             entry_price = close_entry
             entry_index = i
@@ -88,7 +100,8 @@ def run_backtest(df, predicted_close, period_days=3, rsi_exit_threshold=70):
             })
 
         # === SELLシグナル処理 ===
-        elif is_sell_signal(predicted_close, rsi, macd, macd_signal):
+        elif is_sell_signal(local_pred, rsi, macd, macd_signal):
+            # エントリー記録
             total_trades += 1
             entry_price = close_entry
             entry_index = i
@@ -100,8 +113,8 @@ def run_backtest(df, predicted_close, period_days=3, rsi_exit_threshold=70):
                 drawdown = future_price - entry_price  # 逆方向のドローダウン
                 max_drawdown = max(max_drawdown, drawdown)
 
-                if future_rsi < 30:  # RSIが30以下なら利確
-                    profit = entry_price - future_price  # 高く売って安く買い戻す
+                if future_rsi < 30:
+                    profit = entry_price - future_price
                     total_profit += profit
                     win_trades += 1
                     success = True

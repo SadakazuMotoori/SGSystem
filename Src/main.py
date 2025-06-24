@@ -4,6 +4,7 @@ import keyboard
 
 from Framework.MTSystem.MTManager           import MTManager_Initialize, MTManager_UpdateIndicators
 from Framework.ForecastSystem.LSTMModel     import train_and_predict_lstm
+from Framework.ForecastSystem.LSTMModel     import generate_predicted_series
 from Framework.ForecastSystem.SignalEngine  import PhaseA_Filter, PhaseB_Trigger
 
 from Framework.Utility.BacktestEngine       import run_backtest
@@ -52,24 +53,25 @@ def main():
 
     # バックテスト実行
     else:
-        notifier = NotificationManager()
-        notifier.send_email("【SGSystem通知】テストメール","ルークより：これはGmailによる自動通知テストだ。")
+#        notifier = NotificationManager()
+#        notifier.send_email("【SGSystem通知】テストメール","ルークより：これはGmailによる自動通知テストだ。")
 
-#        print("[INFO] バックテスト開始中...")
-#        print("[INFO] インジケータ更新と学習開始")
-#        df = MTManager_UpdateIndicators()
-        # LSTMによる予測処理（翌日の終値）
-#        predicted_prices = train_and_predict_lstm(df,True)
+        print("[INFO] バックテスト開始中...")
+        print("[INFO] インジケータ更新と学習開始")
+        df = MTManager_UpdateIndicators()
+
+        # LSTMによる予測処理
+        predicted_series = generate_predicted_series(df)
         # バックテスト用：全期間の逐次予測値を生成
-#        backtest_result = run_backtest(df, predicted_prices)
+        backtest_result = run_backtest(df, predicted_series)
     
-#        print("\n[Backtest Result]")
-#        print(f"Total Trades    : {backtest_result['total_trades']}")
-#        print(f"Win Trades      : {backtest_result['win_trades']}")
-#        print(f"Loss Trades     : {backtest_result['loss_trades']}")
-#        print(f"Win Rate        : {backtest_result['win_rate']:.2f}%")
-#        print(f"Average Profit  : {backtest_result['average_profit']:.3f} pips")
-#        print(f"Max Drawdown    : {backtest_result['max_drawdown']:.3f} pips")
+        print("\n[Backtest Result]")
+        print(f"Total Trades    : {backtest_result['total_trades']}")
+        print(f"Win Trades      : {backtest_result['win_trades']}")
+        print(f"Loss Trades     : {backtest_result['loss_trades']}")
+        print(f"Win Rate        : {backtest_result['win_rate']:.2f}%")
+        print(f"Average Profit  : {backtest_result['average_profit']:.3f} pips")
+        print(f"Max Drawdown    : {backtest_result['max_drawdown']:.3f} pips")
 
     print("==========SGSystem End==========")
 
