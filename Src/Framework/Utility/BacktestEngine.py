@@ -31,9 +31,9 @@ def is_sell_signal(predicted_close, rsi, macd, macd_signal):
     bearish_osc = rsi > 30 and macd < macd_signal
     return bearish_pred and bearish_osc
 
-def run_backtest(df, predicted_close, period_days=3, rsi_exit_threshold=70):
+def run_backtest(df, predicted_close, period_days=3, lookback=3):
     """
-    Phase-B ロジックに準拠したバックテストを実行（BUY/SELL対応）
+    柔軟なTP条件（直近x本での最高値/最安値更新）を使ったバックテスト
     """
     total_trades = 0
     win_trades = 0
@@ -45,33 +45,31 @@ def run_backtest(df, predicted_close, period_days=3, rsi_exit_threshold=70):
     df = df.copy().reset_index(drop=False)
 
     for i in range(len(df) - period_days):
-        rsi         = df.loc[i, "RSI_14"]
-        macd        = df.loc[i, "MACD"]
+        rsi = df.loc[i, "RSI_14"]
+        macd = df.loc[i, "MACD"]
         macd_signal = df.loc[i, "MACD_signal"]
         close_entry = df.loc[i, "close"]
 
-        # --- 各エントリーポイントに対応する予測値（5日分）を抽出 ---
         local_pred = predicted_close[i:i+5]
-
-        # --- 予測系列が5点揃っていない、または None/NaN が含まれる場合はスキップ ---
-        if len(local_pred) < 5 or any(p is None or (isinstance(p, float) and np.isnan(p)) for p in local_pred):
+        if len(local_pred) < 5:
             continue
 
-        # === BUYシグナル処理 ===
+        # === BUY ===
         if is_buy_signal(local_pred, rsi, macd, macd_signal):
-            # エントリー記録
             total_trades += 1
             entry_price = close_entry
             entry_index = i
             success = False
 
             for j in range(1, period_days + 1):
-                future_rsi = df.loc[i + j, "RSI_14"]
                 future_price = df.loc[i + j, "close"]
+                start_idx = max(0, i + j - lookback + 1)
+                recent_high = df.loc[start_idx: i + j, "close"].max()
+
                 drawdown = entry_price - future_price
                 max_drawdown = max(max_drawdown, drawdown)
 
-                if future_rsi > rsi_exit_threshold:
+                if future_price >= recent_high:
                     profit = future_price - entry_price
                     total_profit += profit
                     win_trades += 1
@@ -99,21 +97,22 @@ def run_backtest(df, predicted_close, period_days=3, rsi_exit_threshold=70):
                 "success": success
             })
 
-        # === SELLシグナル処理 ===
+        # === SELL ===
         elif is_sell_signal(local_pred, rsi, macd, macd_signal):
-            # エントリー記録
             total_trades += 1
             entry_price = close_entry
             entry_index = i
             success = False
 
             for j in range(1, period_days + 1):
-                future_rsi = df.loc[i + j, "RSI_14"]
                 future_price = df.loc[i + j, "close"]
-                drawdown = future_price - entry_price  # 逆方向のドローダウン
+                start_idx = max(0, i + j - lookback + 1)
+                recent_low = df.loc[start_idx: i + j, "close"].min()
+
+                drawdown = future_price - entry_price
                 max_drawdown = max(max_drawdown, drawdown)
 
-                if future_rsi < 30:
+                if future_price <= recent_low:
                     profit = entry_price - future_price
                     total_profit += profit
                     win_trades += 1
