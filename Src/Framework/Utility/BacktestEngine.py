@@ -1,144 +1,156 @@
-import pandas as pd
-import numpy as np
-import mplfinance as mpf
+
 import matplotlib.pyplot as plt
 
-def is_buy_signal(predicted_close, rsi, macd, macd_signal):
-    if any(p is None or (isinstance(p, float) and np.isnan(p)) for p in predicted_close):
-        return False
-    """
-    Phase-B ロジックに準拠したBUY条件の判定
-    - RSIが70未満
-    - MACD > Signal
-    - 予測方向が上昇傾向（5ステップ中3回以上上昇）
-    """
-    direction_score = sum([predicted_close[i] < predicted_close[i + 1] for i in range(len(predicted_close) - 1)])
-    bullish_pred = direction_score >= 3
-    bullish_osc = rsi < 70 and macd > macd_signal
-    return bullish_pred and bullish_osc
+def is_take_profit_met(prices, entry_index, current_index, is_buy, lookback, min_profit):
+    if is_buy:
+        window = prices[entry_index:current_index + 1]
+        if len(window) >= lookback:
+            max_in_window = max(window[-lookback:])
+            profit = max_in_window - prices[entry_index]
+            return profit >= min_profit, profit
+    else:
+        window = prices[entry_index:current_index + 1]
+        if len(window) >= lookback:
+            min_in_window = min(window[-lookback:])
+            profit = prices[entry_index] - min_in_window
+            return profit >= min_profit, profit
+    return False, 0.0
 
-def is_sell_signal(predicted_close, rsi, macd, macd_signal):
-    if any(p is None or (isinstance(p, float) and np.isnan(p)) for p in predicted_close):
-        return False
-    """
-    Phase-B ロジックに準拠したSELL条件の判定
-    - RSIが30超（売られすぎでない状態）
-    - MACD < Signal
-    - 予測方向が下落傾向（5ステップ中3回以上下降）
-    """
-    direction_score = sum([predicted_close[i] > predicted_close[i + 1] for i in range(len(predicted_close) - 1)])
-    bearish_pred = direction_score >= 3
-    bearish_osc = rsi > 30 and macd < macd_signal
-    return bearish_pred and bearish_osc
+def plot_entry_points_chart(df, logs):
+    plt.figure(figsize=(12, 6))
+    plt.title("Entry Points Chart")
 
-def run_backtest(df, predicted_close, period_days=3, lookback=3):
-    """
-    柔軟なTP条件（直近x本での最高値/最安値更新）を使ったバックテスト
-    """
+    plt.plot(df['time'], df['close'], label='Price', linewidth=0.8)
+
+    buy_x = [log['date'] for log in logs if log['type'] == 'BUY']
+    buy_y = [log['entry_price'] for log in logs if log['type'] == 'BUY']
+    sell_x = [log['date'] for log in logs if log['type'] == 'SELL']
+    sell_y = [log['entry_price'] for log in logs if log['type'] == 'SELL']
+    tp_x = [log['date'] for log in logs if log['type'] == 'TP']
+    tp_y = [log['entry_price'] for log in logs if log['type'] == 'TP']
+
+    plt.scatter(buy_x, buy_y, color='green', label='BUY', marker='^')
+    plt.scatter(sell_x, sell_y, color='red', label='SELL', marker='v')
+    plt.scatter(tp_x, tp_y, facecolors='none', edgecolors='blue', label='TP', marker='o')
+
+    plt.legend()
+    plt.grid()
+    plt.show()
+
+def run_backtest(df, predicted_close, period_days=3, lookback=3, min_profit_pips=0.1):
     total_trades = 0
     win_trades = 0
     loss_trades = 0
     total_profit = 0.0
+    total_profit_amount = 0.0
+    total_loss_amount = 0.0
     max_drawdown = 0.0
     entry_logs = []
+    tp_success_count = 0  # TP成立回数カウンタ
 
     df = df.copy().reset_index(drop=False)
 
     for i in range(len(df) - period_days):
-        rsi = df.loc[i, "RSI_14"]
-        macd = df.loc[i, "MACD"]
+        rsi         = df.loc[i, "RSI_14"]
+        macd        = df.loc[i, "MACD"]
         macd_signal = df.loc[i, "MACD_signal"]
         close_entry = df.loc[i, "close"]
 
         local_pred = predicted_close[i:i+5]
-        if len(local_pred) < 5:
+        if len(local_pred) < 5 or any(p is None for p in local_pred):
             continue
 
-        # === BUY ===
-        if is_buy_signal(local_pred, rsi, macd, macd_signal):
+        pred_up = sum([local_pred[j] < local_pred[j+1] for j in range(len(local_pred)-1)])
+        pred_down = sum([local_pred[j] > local_pred[j+1] for j in range(len(local_pred)-1)])
+
+        entry_index = i
+
+        # BUY Signal
+        if pred_up >= 3 and macd > macd_signal and rsi < 50:
             total_trades += 1
-            entry_price = close_entry
-            entry_index = i
             success = False
-
             for j in range(1, period_days + 1):
-                future_price = df.loc[i + j, "close"]
-                start_idx = max(0, i + j - lookback + 1)
-                recent_high = df.loc[start_idx: i + j, "close"].max()
-
-                drawdown = entry_price - future_price
+                current_index = i + j
+                tp_met, profit = is_take_profit_met(df["close"], i, current_index, is_buy=True,
+                                                    lookback=lookback, min_profit=min_profit_pips)
+                drawdown = close_entry - df.loc[current_index, "close"]
                 max_drawdown = max(max_drawdown, drawdown)
 
-                if future_price >= recent_high:
-                    profit = future_price - entry_price
-                    total_profit += profit
+                if tp_met:
                     win_trades += 1
-                    success = True
+                    total_profit += profit
+                    total_profit_amount += profit
                     entry_logs.append({
-                        "date": df.loc[i + j, "time"],
-                        "entry_price": future_price,
+                        "date": df.loc[current_index, "time"],
+                        "entry_price": df.loc[current_index, "close"],
                         "type": "TP"
                     })
+                    tp_success_count += 1
+                    success = True
                     break
 
             if not success:
-                profit = df.loc[i + period_days, "close"] - entry_price
+                profit = df.loc[i + period_days, "close"] - close_entry
                 total_profit += profit
-                loss_trades += 1
+                if profit > 0:
+                    total_profit_amount += profit
+                    win_trades += 1
+                else:
+                    total_loss_amount += abs(profit)
+                    loss_trades += 1
 
             entry_logs.append({
                 "date": df.loc[entry_index, "time"],
-                "entry_price": entry_price,
+                "entry_price": close_entry,
                 "type": "BUY",
-                "rsi": rsi,
-                "macd": macd,
-                "macd_signal": macd_signal,
                 "profit": profit,
                 "success": success
             })
 
-        # === SELL ===
-        elif is_sell_signal(local_pred, rsi, macd, macd_signal):
+        # SELL Signal
+        elif pred_down >= 3 and macd < macd_signal and rsi > 50:
             total_trades += 1
-            entry_price = close_entry
-            entry_index = i
             success = False
-
             for j in range(1, period_days + 1):
-                future_price = df.loc[i + j, "close"]
-                start_idx = max(0, i + j - lookback + 1)
-                recent_low = df.loc[start_idx: i + j, "close"].min()
-
-                drawdown = future_price - entry_price
+                current_index = i + j
+                tp_met, profit = is_take_profit_met(df["close"], i, current_index, is_buy=False,
+                                                    lookback=lookback, min_profit=min_profit_pips)
+                drawdown = df.loc[current_index, "close"] - close_entry
                 max_drawdown = max(max_drawdown, drawdown)
 
-                if future_price <= recent_low:
-                    profit = entry_price - future_price
-                    total_profit += profit
+                if tp_met:
                     win_trades += 1
-                    success = True
+                    total_profit += profit
+                    total_profit_amount += profit
                     entry_logs.append({
-                        "date": df.loc[i + j, "time"],
-                        "entry_price": future_price,
+                        "date": df.loc[current_index, "time"],
+                        "entry_price": df.loc[current_index, "close"],
                         "type": "TP"
                     })
+                    tp_success_count += 1
+                    success = True
                     break
 
             if not success:
-                profit = entry_price - df.loc[i + period_days, "close"]
+                profit = close_entry - df.loc[i + period_days, "close"]
                 total_profit += profit
-                loss_trades += 1
+                
+                if profit > 0:
+                    total_profit_amount += profit
+                    win_trades += 1
+                else:
+                    total_loss_amount += abs(profit)
+                    loss_trades += 1
 
             entry_logs.append({
                 "date": df.loc[entry_index, "time"],
-                "entry_price": entry_price,
+                "entry_price": close_entry,
                 "type": "SELL",
-                "rsi": rsi,
-                "macd": macd,
-                "macd_signal": macd_signal,
                 "profit": profit,
                 "success": success
             })
+
+    profit_factor = (total_profit_amount / total_loss_amount) if total_loss_amount > 0 else float("inf")
 
     result = {
         "total_trades": total_trades,
@@ -147,89 +159,14 @@ def run_backtest(df, predicted_close, period_days=3, lookback=3):
         "win_rate": (win_trades / total_trades) * 100 if total_trades > 0 else 0,
         "average_profit": (total_profit / total_trades) if total_trades > 0 else 0,
         "max_drawdown": max_drawdown,
+        "profit_factor": profit_factor,
         "entry_logs": entry_logs
     }
 
+    print(f"[DEBUG] TP condition met count: {tp_success_count}")
+    if total_trades > 0:
+        print(f"[DEBUG] TP hit rate: {(tp_success_count / total_trades) * 100:.2f}%")
     if len(entry_logs) > 0:
         plot_entry_points_chart(df, entry_logs)
 
     return result
-
-def plot_entry_points_chart(df, entry_logs):
-    import pandas as pd
-    import mplfinance as mpf
-    import matplotlib.pyplot as plt
-
-    # --- データフレームの準備 ---
-    df = df.copy()
-    df["time"] = pd.to_datetime(df["time"])       # time列をdatetime型に変換
-    df.set_index("time", inplace=True)            # time列をインデックス化（mplfinance準拠）
-
-    # --- OHLCV形式に整形 ---
-    ohlc = df[["open", "high", "low", "close", "volume"]]  # チャート描画用データ
-
-    # === BUYエントリーの処理 ===
-    buys = [log for log in entry_logs if log["type"] == "BUY"]
-    buy_df = pd.DataFrame({
-        "date": pd.to_datetime([log["date"] for log in buys]),
-        "price": [log["entry_price"] for log in buys]
-    })
-    buy_df = buy_df[buy_df["date"].isin(ohlc.index)]
-    x_buys = [ohlc.index.get_loc(date) for date in buy_df["date"]]
-    y_buys = buy_df["price"].values
-    print(f"[DEBUG] BUY marker count after filtering: {len(buy_df)}")
-
-    # === SELLエントリーの処理 ===
-    sells = [log for log in entry_logs if log["type"] == "SELL"]
-    sell_df = pd.DataFrame({
-        "date": pd.to_datetime([log["date"] for log in sells]),
-        "price": [log["entry_price"] for log in sells]
-    })
-    sell_df = sell_df[sell_df["date"].isin(ohlc.index)]
-    x_sells = [ohlc.index.get_loc(date) for date in sell_df["date"]]
-    y_sells = sell_df["price"].values
-    print(f"[DEBUG] SELL marker count after filtering: {len(sell_df)}")
-
-    # === TP（利確）マーカー処理 ===
-    take_profits = [log for log in entry_logs if log["type"] == "TP"]
-    tp_df = pd.DataFrame({
-        "date": pd.to_datetime([log["date"] for log in take_profits]),
-        "price": [log["entry_price"] for log in take_profits]
-    })
-    tp_df = tp_df[tp_df["date"].isin(ohlc.index)]
-    x_tp = [ohlc.index.get_loc(date) for date in tp_df["date"]]
-    y_tp = tp_df["price"].values
-    print(f"[DEBUG] TP marker count after filtering: {len(tp_df)}")
-
-    # === 整合性チェック ===
-    if len(x_buys) != len(y_buys) or len(x_sells) != len(y_sells) or len(x_tp) != len(y_tp):
-        print("[ERROR] XとYの長さ不一致：描画中止")
-        return
-
-    if len(x_buys) == 0 and len(x_sells) == 0 and len(x_tp) == 0:
-        print("[INFO] BUY/SELL/TPエントリーが存在しません。チャート描画スキップ。")
-        return
-
-    # --- チャート描画 ---
-    fig, axlist = mpf.plot(
-        ohlc,
-        type="candle",
-        style="yahoo",
-        title="Entry Points Chart",
-        ylabel="Price",
-        volume=True,
-        returnfig=True,
-        warn_too_much_data=len(ohlc)+1
-    )
-
-    ax_price = axlist[0]
-
-    if len(x_buys) > 0:
-        ax_price.scatter(x_buys, y_buys, marker='^', color='green', s=100, label='BUY')
-    if len(x_sells) > 0:
-        ax_price.scatter(x_sells, y_sells, marker='v', color='red', s=100, label='SELL')
-    if len(x_tp) > 0:
-        ax_price.scatter(x_tp, y_tp, marker='o', facecolors='none', edgecolors='blue', s=70, label='TP')
-
-    ax_price.legend()
-    plt.show()
