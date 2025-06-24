@@ -54,23 +54,25 @@ def PhaseB_Trigger(predicted_close: list[float], df: pd.DataFrame) -> str:
         bullish_pred = direction_score >= 4
         bearish_pred = direction_score <= 1
 
-        # --- ② RSI・MACD条件（緩和版） ---
-        rsi = latest.get("RSI_14", None)
-        macd = latest.get("MACD", None)
-        macd_signal = latest.get("MACD_signal", None)
+        
+        # --- ② RSI・MACD条件（改良版） ---
+        rsi_now = latest.get("RSI_14", None)
+        rsi_prev = df.iloc[-2].get("RSI_14", None)
+        macd_now = latest.get("MACD", None)
+        macd_prev = df.iloc[-2].get("MACD", None)
+        macd_sig_now = latest.get("MACD_signal", None)
+        macd_sig_prev = df.iloc[-2].get("MACD_signal", None)
 
-        if rsi is None or macd is None or macd_signal is None:
+        if None in [rsi_now, rsi_prev, macd_now, macd_prev, macd_sig_now, macd_sig_prev]:
             print("[PhaseB_Trigger] インジケータ欠損")
             return "NO-TRADE"
 
-        # 緩和条件：
-        # - ロング: RSIが40未満（以前は30）、MACD > Signal
-        # - ショート: RSIが60超（以前は70）、MACD < Signal
-        bullish_osc = rsi < 35 and macd > macd_signal
-        bearish_osc = rsi > 65 and macd < macd_signal
+        rsi_avg = (rsi_now + rsi_prev) / 2
+        bullish_osc = rsi_avg < 30 and macd_now > macd_sig_now and macd_prev > macd_sig_prev
+        bearish_osc = rsi_avg > 70 and macd_now < macd_sig_now and macd_prev < macd_sig_prev
 
         # --- Debug 出力（必要に応じて有効化） ---
-        print(f"[DEBUG] RSI={rsi}, MACD={macd}, Signal={macd_signal}")
+        print(f"[DEBUG] RSI_avg={rsi_avg:.2f}, MACD_now={macd_now:.4f}, MACD_prev={macd_prev:.4f}, Signal_now={macd_sig_now:.4f}, Signal_prev={macd_sig_prev:.4f}")
         print(f"[DEBUG] bullish_pred={bullish_pred}, bullish_osc={bullish_osc}")
         print(f"[DEBUG] bearish_pred={bearish_pred}, bearish_osc={bearish_osc}")
 
