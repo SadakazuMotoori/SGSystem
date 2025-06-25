@@ -114,3 +114,29 @@ def MTManager_UpdateIndicators(days_back=600, show_prot = True):
     train_and_predict_lstm(df)
 
     return df
+
+# ==============================
+# Position State Management for Backtest
+# ==============================
+_position_active    = False
+_position_end_index = -1  # インデックスベースでの保有期間終端
+
+def ResetPositionState():
+    global _position_active, _position_end_index
+    _position_active = False
+    _position_end_index = -1
+
+def IsPositionActive(current_index=None):
+    global _position_active, _position_end_index
+    if current_index is not None:
+        return _position_active and current_index <= _position_end_index
+    return _position_active
+
+def SetPositionActive(period_length, current_index):
+    global _position_active, _position_end_index
+    _position_active = True
+    _position_end_index = current_index + period_length
+
+def ClosePosition():
+    global _position_active
+    _position_active = False

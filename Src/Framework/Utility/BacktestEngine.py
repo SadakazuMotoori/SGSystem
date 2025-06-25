@@ -1,6 +1,13 @@
 
 import matplotlib.pyplot as plt
 
+from Framework.MTSystem.MTManager import (
+    IsPositionActive,
+    SetPositionActive,
+    ResetPositionState,
+    ClosePosition
+)
+
 def is_take_profit_met(prices, entry_index, current_index, is_buy, lookback, min_profit):
     if is_buy:
         window = prices[entry_index:current_index + 1]
@@ -38,6 +45,9 @@ def plot_entry_points_chart(df, logs):
     plt.show()
 
 def run_backtest(df, predicted_close, period_days=3, lookback=3, min_profit_pips=0.1):
+    # 新機能：ポジション管理リセット
+    ResetPositionState()
+
     total_trades = 0
     win_trades = 0
     loss_trades = 0
@@ -51,6 +61,10 @@ def run_backtest(df, predicted_close, period_days=3, lookback=3, min_profit_pips
     df = df.copy().reset_index(drop=False)
 
     for i in range(len(df) - period_days):
+        # 🔒 保有中ならスキップ（多重エントリー防止）
+        if IsPositionActive(i):
+            continue
+
         rsi         = df.loc[i, "RSI_14"]
         macd        = df.loc[i, "MACD"]
         macd_signal = df.loc[i, "MACD_signal"]
@@ -69,6 +83,11 @@ def run_backtest(df, predicted_close, period_days=3, lookback=3, min_profit_pips
         if pred_up >= 3 and macd > macd_signal and rsi < 50:
             total_trades += 1
             success = False
+
+
+            # ✅ 保有状態に設定（ここがSetのタイミング）
+            SetPositionActive(period_days, i)
+
             for j in range(1, period_days + 1):
                 current_index = i + j
                 tp_met, profit = is_take_profit_met(df["close"], i, current_index, is_buy=True,
@@ -87,6 +106,10 @@ def run_backtest(df, predicted_close, period_days=3, lookback=3, min_profit_pips
                     })
                     tp_success_count += 1
                     success = True
+
+                    # TP成立時のみその場でクローズ
+                    ClosePosition()
+
                     break
 
             if not success:
@@ -98,6 +121,8 @@ def run_backtest(df, predicted_close, period_days=3, lookback=3, min_profit_pips
                 else:
                     total_loss_amount += abs(profit)
                     loss_trades += 1
+                # ✅ 満了時はここで明示的にポジションクローズ
+                ClosePosition()
 
             entry_logs.append({
                 "date": df.loc[entry_index, "time"],
@@ -111,6 +136,10 @@ def run_backtest(df, predicted_close, period_days=3, lookback=3, min_profit_pips
         elif pred_down >= 3 and macd < macd_signal and rsi > 50:
             total_trades += 1
             success = False
+
+            # ✅ 保有状態に設定（SELLでも同様）
+            SetPositionActive(period_days, i)
+
             for j in range(1, period_days + 1):
                 current_index = i + j
                 tp_met, profit = is_take_profit_met(df["close"], i, current_index, is_buy=False,
@@ -129,6 +158,10 @@ def run_backtest(df, predicted_close, period_days=3, lookback=3, min_profit_pips
                     })
                     tp_success_count += 1
                     success = True
+
+                    # TP成立時のみその場でクローズ
+                    ClosePosition()
+
                     break
 
             if not success:
@@ -141,6 +174,9 @@ def run_backtest(df, predicted_close, period_days=3, lookback=3, min_profit_pips
                 else:
                     total_loss_amount += abs(profit)
                     loss_trades += 1
+
+                # ✅ 満了時はここで明示的にポジションクローズ
+                ClosePosition()
 
             entry_logs.append({
                 "date": df.loc[entry_index, "time"],
