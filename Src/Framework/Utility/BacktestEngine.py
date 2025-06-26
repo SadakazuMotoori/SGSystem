@@ -1,4 +1,3 @@
-
 import matplotlib.pyplot as plt
 
 from Framework.ForecastSystem.SignalEngine import PhaseA_Filter, PhaseB_Trigger
@@ -45,7 +44,7 @@ def plot_entry_points_chart(df, logs):
     plt.grid()
     plt.show()
 
-def run_backtest(df, predicted_close, period_days=3, lookback=3, min_profit_pips=0.1):
+def run_backtest(df, predicted_close, period_days=5, lookback=3):
     ResetPositionState()
 
     total_trades = 0
@@ -76,7 +75,6 @@ def run_backtest(df, predicted_close, period_days=3, lookback=3, min_profit_pips
             continue
 
         current_pred = predicted_close[i:i+5]
-        # 検証用ログ
         if len(current_pred) < 5 or any(p is None for p in current_pred):
             print(f"[SKIP] {df.loc[i, 'time']} - predicted_close不足: {current_pred}")
             continue
@@ -105,12 +103,16 @@ def run_backtest(df, predicted_close, period_days=3, lookback=3, min_profit_pips
         SetPositionActive(period_days, i)
         success = False
 
+        atr_now = df.loc[i, "ATR_14"]
+        tp_threshold = atr_now * 1.2
+
         for j in range(1, period_days + 1):
             current_index = i + j
             tp_met, profit = is_take_profit_met(
                 df["close"], i, current_index,
                 is_buy=is_buy,
-                lookback=lookback, min_profit=min_profit_pips
+                lookback=lookback,
+                min_profit=tp_threshold
             )
             if is_buy:
                 drawdown = close_entry - df.loc[current_index, "close"]
@@ -177,6 +179,6 @@ def run_backtest(df, predicted_close, period_days=3, lookback=3, min_profit_pips
     for log in entry_logs:
         if log["type"] == "SKIP":
             print(f"[SKIP] {log['date']}: {log['reason']}")
-            break  # 最初の1件だけでOK
+            break
 
     return result
