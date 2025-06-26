@@ -2,26 +2,26 @@ import pandas as pd
 
 def PhaseA_Filter(df: pd.DataFrame) -> tuple[bool, str]:
     try:
-        if len(df) < 2:
-            return False, "データ不足 (<2行)"
+        if len(df) < 6:
+            return False, "データ不足 (<6行)"
 
-        sma50_today = df.iloc[-1]["SMA_50"]
-        sma50_yesterday = df.iloc[-2]["SMA_50"]
+        sma_today = df["SMA_20"].iloc[-1]
+        sma_past = df["SMA_20"].iloc[-6]  # 5日前と比較
+
         atr = df.iloc[-1]["ATR_14"]
-
-        trend_up = sma50_today > sma50_yesterday
         atr_threshold = 0.5
+
+        trend_up = sma_today > sma_past
         vol_active = atr > atr_threshold
 
         if not trend_up and not vol_active:
-            return False, "SMA下降 & ATR不足"
+            return False, "SMA20上昇せず & ATR不足"
         elif not trend_up:
-            return False, "SMA下降"
+            return False, "SMA20上昇せず"
         elif not vol_active:
             return False, "ATR不足"
         else:
             return True, "通過"
-
     except Exception as e:
         return False, f"PhaseA エラー: {str(e)}"
 

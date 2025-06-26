@@ -70,6 +70,7 @@ def MTManager_UpdateIndicators(days_back=600, show_prot = True):
     df["Resistance"] = df["high"].rolling(window=10).max()
 
     # SMAを追加（Phase-Aフィルタで必要）
+    df["SMA_20"] = df["close"].rolling(window=20).mean()
     df["SMA_50"]  = df["close"].rolling(window=50).mean()
     # モデル精度への影響が大きいため除外
     #df["SMA_200"] = df["close"].rolling(window=200).mean()
