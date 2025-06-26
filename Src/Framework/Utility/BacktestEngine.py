@@ -1,5 +1,7 @@
 import matplotlib.pyplot as plt
+import pandas as pd
 
+from datetime import datetime
 from Framework.ForecastSystem.SignalEngine import PhaseA_Filter, PhaseB_Trigger
 from Framework.MTSystem.MTManager import (
     IsPositionActive,
@@ -181,4 +183,18 @@ def run_backtest(df, predicted_close, period_days=5, lookback=3):
             print(f"[SKIP] {log['date']}: {log['reason']}")
             break
 
+    # ログ抽出
+    print(f"[期間] {df['time'].iloc[0]} ～ {df['time'].iloc[-1]}")
+    analyze_skips_by_period(  result["entry_logs"],
+                              start_date=datetime(2023, 4, 1),
+                              end_date=datetime(2023, 7, 31)
+                           )
     return result
+
+def analyze_skips_by_period(entry_logs, start_date, end_date):
+    print(f"[SKIP分析] {start_date.date()} ～ {end_date.date()} の除外理由一覧 ↓")
+    for log in entry_logs:
+        if log["type"] == "SKIP":
+            log_date = pd.to_datetime(log["date"])
+            if start_date <= log_date <= end_date:
+                print(f"{log['date']} | {log['reason']}")
