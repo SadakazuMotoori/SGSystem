@@ -1,6 +1,7 @@
 
 import matplotlib.pyplot as plt
 
+from Framework.ForecastSystem.SignalEngine import PhaseA_Filter, PhaseB_Trigger
 from Framework.MTSystem.MTManager import (
     IsPositionActive,
     SetPositionActive,
@@ -45,7 +46,6 @@ def plot_entry_points_chart(df, logs):
     plt.show()
 
 def run_backtest(df, predicted_close, period_days=3, lookback=3, min_profit_pips=0.1):
-    # 新機能：ポジション管理リセット
     ResetPositionState()
 
     total_trades = 0
@@ -56,135 +56,104 @@ def run_backtest(df, predicted_close, period_days=3, lookback=3, min_profit_pips
     total_loss_amount = 0.0
     max_drawdown = 0.0
     entry_logs = []
-    tp_success_count = 0  # TP成立回数カウンタ
+    tp_success_count = 0
 
     df = df.copy().reset_index(drop=False)
 
     for i in range(len(df) - period_days):
-        # 🔒 保有中ならスキップ（多重エントリー防止）
         if IsPositionActive(i):
             continue
 
-        rsi         = df.loc[i, "RSI_14"]
-        macd        = df.loc[i, "MACD"]
-        macd_signal = df.loc[i, "MACD_signal"]
-        close_entry = df.loc[i, "close"]
-
-        local_pred = predicted_close[i:i+5]
-        if len(local_pred) < 5 or any(p is None for p in local_pred):
+        current_df = df.iloc[:i+1].copy()
+        pass_a, reason_a = PhaseA_Filter(current_df)
+        if not pass_a:
+            entry_logs.append({
+                "date": df.loc[i, "time"],
+                "entry_price": df.loc[i, "close"],
+                "type": "SKIP",
+                "reason": f"Phase-A失敗: {reason_a}"
+            })
             continue
 
-        pred_up = sum([local_pred[j] < local_pred[j+1] for j in range(len(local_pred)-1)])
-        pred_down = sum([local_pred[j] > local_pred[j+1] for j in range(len(local_pred)-1)])
+        current_pred = predicted_close[i:i+5]
+        # 検証用ログ
+        if len(current_pred) < 5 or any(p is None for p in current_pred):
+            print(f"[SKIP] {df.loc[i, 'time']} - predicted_close不足: {current_pred}")
+            continue
+
+        signal, reason_b = PhaseB_Trigger(current_pred, current_df)
+        if signal == "NO-TRADE":
+            entry_logs.append({
+                "date": df.loc[i, "time"],
+                "entry_price": df.loc[i, "close"],
+                "type": "SKIP",
+                "reason": f"Phase-B不成立: {reason_b}"
+            })
+            continue
 
         entry_index = i
+        close_entry = df.loc[i, "close"]
 
-        # BUY Signal
-        if pred_up >= 3 and macd > macd_signal and rsi < 50:
-            total_trades += 1
-            success = False
+        if signal == "BUY":
+            is_buy = True
+        elif signal == "SELL":
+            is_buy = False
+        else:
+            continue
 
+        total_trades += 1
+        SetPositionActive(period_days, i)
+        success = False
 
-            # ✅ 保有状態に設定（ここがSetのタイミング）
-            SetPositionActive(period_days, i)
-
-            for j in range(1, period_days + 1):
-                current_index = i + j
-                tp_met, profit = is_take_profit_met(df["close"], i, current_index, is_buy=True,
-                                                    lookback=lookback, min_profit=min_profit_pips)
+        for j in range(1, period_days + 1):
+            current_index = i + j
+            tp_met, profit = is_take_profit_met(
+                df["close"], i, current_index,
+                is_buy=is_buy,
+                lookback=lookback, min_profit=min_profit_pips
+            )
+            if is_buy:
                 drawdown = close_entry - df.loc[current_index, "close"]
-                max_drawdown = max(max_drawdown, drawdown)
-
-                if tp_met:
-                    win_trades += 1
-                    total_profit += profit
-                    total_profit_amount += profit
-                    entry_logs.append({
-                        "date": df.loc[current_index, "time"],
-                        "entry_price": df.loc[current_index, "close"],
-                        "type": "TP"
-                    })
-                    tp_success_count += 1
-                    success = True
-
-                    # TP成立時のみその場でクローズ
-                    ClosePosition()
-
-                    break
-
-            if not success:
-                profit = df.loc[i + period_days, "close"] - close_entry
-                total_profit += profit
-                if profit > 0:
-                    total_profit_amount += profit
-                    win_trades += 1
-                else:
-                    total_loss_amount += abs(profit)
-                    loss_trades += 1
-                # ✅ 満了時はここで明示的にポジションクローズ
-                ClosePosition()
-
-            entry_logs.append({
-                "date": df.loc[entry_index, "time"],
-                "entry_price": close_entry,
-                "type": "BUY",
-                "profit": profit,
-                "success": success
-            })
-
-        # SELL Signal
-        elif pred_down >= 3 and macd < macd_signal and rsi > 50:
-            total_trades += 1
-            success = False
-
-            # ✅ 保有状態に設定（SELLでも同様）
-            SetPositionActive(period_days, i)
-
-            for j in range(1, period_days + 1):
-                current_index = i + j
-                tp_met, profit = is_take_profit_met(df["close"], i, current_index, is_buy=False,
-                                                    lookback=lookback, min_profit=min_profit_pips)
+            else:
                 drawdown = df.loc[current_index, "close"] - close_entry
-                max_drawdown = max(max_drawdown, drawdown)
+            max_drawdown = max(max_drawdown, drawdown)
 
-                if tp_met:
-                    win_trades += 1
-                    total_profit += profit
-                    total_profit_amount += profit
-                    entry_logs.append({
-                        "date": df.loc[current_index, "time"],
-                        "entry_price": df.loc[current_index, "close"],
-                        "type": "TP"
-                    })
-                    tp_success_count += 1
-                    success = True
-
-                    # TP成立時のみその場でクローズ
-                    ClosePosition()
-
-                    break
-
-            if not success:
-                profit = close_entry - df.loc[i + period_days, "close"]
+            if tp_met:
+                win_trades += 1
                 total_profit += profit
-                
-                if profit > 0:
-                    total_profit_amount += profit
-                    win_trades += 1
-                else:
-                    total_loss_amount += abs(profit)
-                    loss_trades += 1
-
-                # ✅ 満了時はここで明示的にポジションクローズ
+                total_profit_amount += profit
+                entry_logs.append({
+                    "date": df.loc[current_index, "time"],
+                    "entry_price": df.loc[current_index, "close"],
+                    "type": "TP"
+                })
+                tp_success_count += 1
+                success = True
                 ClosePosition()
+                break
 
-            entry_logs.append({
-                "date": df.loc[entry_index, "time"],
-                "entry_price": close_entry,
-                "type": "SELL",
-                "profit": profit,
-                "success": success
-            })
+        if not success:
+            if is_buy:
+                profit = df.loc[i + period_days, "close"] - close_entry
+            else:
+                profit = close_entry - df.loc[i + period_days, "close"]
+
+            total_profit += profit
+            if profit > 0:
+                win_trades += 1
+                total_profit_amount += profit
+            else:
+                loss_trades += 1
+                total_loss_amount += abs(profit)
+            ClosePosition()
+
+        entry_logs.append({
+            "date": df.loc[entry_index, "time"],
+            "entry_price": close_entry,
+            "type": "BUY" if is_buy else "SELL",
+            "profit": profit,
+            "success": success
+        })
 
     profit_factor = (total_profit_amount / total_loss_amount) if total_loss_amount > 0 else float("inf")
 
@@ -204,5 +173,10 @@ def run_backtest(df, predicted_close, period_days=3, lookback=3, min_profit_pips
         print(f"[DEBUG] TP hit rate: {(tp_success_count / total_trades) * 100:.2f}%")
     if len(entry_logs) > 0:
         plot_entry_points_chart(df, entry_logs)
+
+    for log in entry_logs:
+        if log["type"] == "SKIP":
+            print(f"[SKIP] {log['date']}: {log['reason']}")
+            break  # 最初の1件だけでOK
 
     return result

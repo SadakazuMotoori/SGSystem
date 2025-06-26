@@ -1,61 +1,43 @@
 import pandas as pd
 
-def PhaseA_Filter(df: pd.DataFrame) -> bool:
-    """
-    Phase-A: フィルタ条件の判定
-    条件①：SMA50 の傾き → 短期的な上昇トレンドがあるか
-    条件②：ATRの水準 → ボラティリティが十分か
-
-    Returns:
-        bool: True なら通過、False ならフィルタ落ち
-    """
+def PhaseA_Filter(df: pd.DataFrame) -> tuple[bool, str]:
     try:
+        if len(df) < 2:
+            return False, "データ不足 (<2行)"
+
         sma50_today = df.iloc[-1]["SMA_50"]
         sma50_yesterday = df.iloc[-2]["SMA_50"]
         atr = df.iloc[-1]["ATR_14"]
 
-        # 短期上昇トレンドの判定
         trend_up = sma50_today > sma50_yesterday
-
-        # ボラティリティの閾値（今後調整可）
         atr_threshold = 0.5
         vol_active = atr > atr_threshold
 
-        # --- Debug 出力（必要に応じて有効化） ---
-        print(f"[DEBUG] SMA_50: {sma50_yesterday:.4f} → {sma50_today:.4f}, ATR: {atr:.4f}")
-        print(f"[DEBUG] trend_up={trend_up}, vol_active={vol_active}")
-
-        return trend_up and vol_active
+        if not trend_up and not vol_active:
+            return False, "SMA下降 & ATR不足"
+        elif not trend_up:
+            return False, "SMA下降"
+        elif not vol_active:
+            return False, "ATR不足"
+        else:
+            return True, "通過"
 
     except Exception as e:
-        print(f"[PhaseA_Filter] エラー: {e}")
-        return False
+        return False, f"PhaseA エラー: {str(e)}"
 
 
-def PhaseB_Trigger(predicted_close: list[float], df: pd.DataFrame) -> str:
-    """
-    Phase-B: 予測とオシレータを使った仕掛け判定（BUY/SELL/NO-TRADE）
-
-    Returns:
-        str: "BUY", "SELL", or "NO-TRADE"
-    """
+def PhaseB_Trigger(predicted_close: list[float], df: pd.DataFrame) -> tuple[str, str]:
     try:
         if not predicted_close or len(predicted_close) < 2:
-            print("[PhaseB_Trigger] 不正な予測入力")
-            return "NO-TRADE"
+            return "NO-TRADE", "予測値不足"
 
         latest = df.iloc[-1]
+        direction_score = sum(predicted_close[i] < predicted_close[i + 1] for i in range(len(predicted_close) - 1))
+        bearish_score = sum(predicted_close[i] > predicted_close[i + 1] for i in range(len(predicted_close) - 1))
 
-        # --- ① 予測トレンド方向のスコア ---
-        direction_score = sum(
-            predicted_close[i] < predicted_close[i + 1]
-            for i in range(len(predicted_close) - 1)
-        )
-        bullish_pred = direction_score >= 4
-        bearish_pred = direction_score <= 1
+        bullish_pred = direction_score >= 3
+        bearish_pred = bearish_score >= 3
 
-        
-        # --- ② RSI・MACD条件（改良版） ---
         rsi_now = latest.get("RSI_14", None)
         rsi_prev = df.iloc[-2].get("RSI_14", None)
         macd_now = latest.get("MACD", None)
@@ -64,25 +46,30 @@ def PhaseB_Trigger(predicted_close: list[float], df: pd.DataFrame) -> str:
         macd_sig_prev = df.iloc[-2].get("MACD_signal", None)
 
         if None in [rsi_now, rsi_prev, macd_now, macd_prev, macd_sig_now, macd_sig_prev]:
-            print("[PhaseB_Trigger] インジケータ欠損")
-            return "NO-TRADE"
+            return "NO-TRADE", "インジケータ欠損"
 
         rsi_avg = (rsi_now + rsi_prev) / 2
-        bullish_osc = rsi_avg < 30 and macd_now > macd_sig_now and macd_prev > macd_sig_prev
-        bearish_osc = rsi_avg > 70 and macd_now < macd_sig_now and macd_prev < macd_sig_prev
+        bullish_rsi = rsi_avg < 35
+        bearish_rsi = rsi_avg > 65
+        bullish_macd = macd_now > macd_sig_now and macd_prev > macd_sig_prev
+        bearish_macd = macd_now < macd_sig_now and macd_prev < macd_sig_prev
 
-        # --- Debug 出力（必要に応じて有効化） ---
-        print(f"[DEBUG] RSI_avg={rsi_avg:.2f}, MACD_now={macd_now:.4f}, MACD_prev={macd_prev:.4f}, Signal_now={macd_sig_now:.4f}, Signal_prev={macd_sig_prev:.4f}")
-        print(f"[DEBUG] bullish_pred={bullish_pred}, bullish_osc={bullish_osc}")
-        print(f"[DEBUG] bearish_pred={bearish_pred}, bearish_osc={bearish_osc}")
+        bullish_osc = bullish_rsi or bullish_macd
+        bearish_osc = bearish_rsi or bearish_macd
+
+        reason_log = f"[DEBUG] DIR={direction_score}, RSI_avg={rsi_avg:.2f}, MACD_now={macd_now:.4f}, Signal_now={macd_sig_now:.4f}"
 
         if bullish_pred and bullish_osc:
-            return "BUY"
+            return "BUY", f"予測↑:{direction_score} & RSI or MACD 強気 | {reason_log}"
         elif bearish_pred and bearish_osc:
-            return "SELL"
+            return "SELL", f"予測↓:{bearish_score} & RSI or MACD 弱気 | {reason_log}"
         else:
-            return "NO-TRADE"
+            reasons = []
+            if not bullish_pred and not bearish_pred:
+                reasons.append("方向性弱い")
+            if not bullish_osc and not bearish_osc:
+                reasons.append("オシレータ不一致")
+            return "NO-TRADE", " / ".join(reasons) + " | " + reason_log
 
     except Exception as e:
-        print(f"[PhaseB_Trigger] エラー: {e}")
-        return "NO-TRADE"
+        return "NO-TRADE", f"PhaseB エラー: {str(e)}"
