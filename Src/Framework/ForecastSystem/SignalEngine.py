@@ -6,22 +6,23 @@ def PhaseA_Filter(df: pd.DataFrame) -> tuple[bool, str]:
             return False, "データ不足 (<6行)"
 
         sma_today = df["SMA_20"].iloc[-1]
-        sma_past = df["SMA_20"].iloc[-6]  # 5日前と比較
+        sma_past = df["SMA_20"].iloc[-6]
+        atr_today = df["ATR_14"].iloc[-1]
 
-        atr = df.iloc[-1]["ATR_14"]
-        atr_threshold = 0.5
+        # 緩和された閾値設定
+        atr_threshold_ratio = 0.3  # 従来の0.4より緩め
+        fixed_threshold = 0.03     # 最小ライン（pips変換で約3pips相当）
+        atr_threshold = atr_today * atr_threshold_ratio
+        # 修正後（正しく最低限のフィルタとして機能させる）
+        dynamic_threshold = max(fixed_threshold, atr_threshold)
 
-        trend_up = sma_today > sma_past
-        vol_active = atr > atr_threshold
+        sma_diff = sma_today - sma_past
 
-        if not trend_up and not vol_active:
-            return False, "SMA20上昇せず & ATR不足"
-        elif not trend_up:
-            return False, "SMA20上昇せず"
-        elif not vol_active:
-            return False, "ATR不足"
-        else:
+        if abs(sma_diff) > dynamic_threshold:
             return True, "通過"
+        else:
+            return False, f"PhaseA不成立: SMA変化={sma_diff:.5f}, ATR={atr_today:.5f}, 閾値={dynamic_threshold:.5f}"
+
     except Exception as e:
         return False, f"PhaseA エラー: {str(e)}"
 
@@ -35,41 +36,26 @@ def PhaseB_Trigger(predicted_close: list[float], df: pd.DataFrame) -> tuple[str,
         direction_score = sum(predicted_close[i] < predicted_close[i + 1] for i in range(len(predicted_close) - 1))
         bearish_score = sum(predicted_close[i] > predicted_close[i + 1] for i in range(len(predicted_close) - 1))
 
-        bullish_pred = direction_score >= 3
-        bearish_pred = bearish_score >= 3
+        # ▼ 予測が横ばいの場合はSMA傾斜で方向を判断
+        if direction_score == 0 and bearish_score == 0:
+            sma_today = df["SMA_20"].iloc[-1]
+            sma_past = df["SMA_20"].iloc[-6]
+            sma_slope = sma_today - sma_past
 
-        rsi_now = latest.get("RSI_14", None)
-        rsi_prev = df.iloc[-2].get("RSI_14", None)
-        macd_now = latest.get("MACD", None)
-        macd_prev = df.iloc[-2].get("MACD", None)
-        macd_sig_now = latest.get("MACD_signal", None)
-        macd_sig_prev = df.iloc[-2].get("MACD_signal", None)
+            if sma_slope > 0:
+                return "BUY", f"予測横ばい → SMA傾斜BUY判断 (傾き={sma_slope:.5f})"
+            elif sma_slope < 0:
+                return "SELL", f"予測横ばい → SMA傾斜SELL判断 (傾き={sma_slope:.5f})"
+            else:
+                return "NO-TRADE", f"予測横ばいかつSMAフラット (傾き={sma_slope:.5f})"
 
-        if None in [rsi_now, rsi_prev, macd_now, macd_prev, macd_sig_now, macd_sig_prev]:
-            return "NO-TRADE", "インジケータ欠損"
-
-        rsi_avg = (rsi_now + rsi_prev) / 2
-        bullish_rsi = rsi_avg < 35
-        bearish_rsi = rsi_avg > 65
-        bullish_macd = macd_now > macd_sig_now and macd_prev > macd_sig_prev
-        bearish_macd = macd_now < macd_sig_now and macd_prev < macd_sig_prev
-
-        bullish_osc = bullish_rsi or bullish_macd
-        bearish_osc = bearish_rsi or bearish_macd
-
-        reason_log = f"[DEBUG] DIR={direction_score}, RSI_avg={rsi_avg:.2f}, MACD_now={macd_now:.4f}, Signal_now={macd_sig_now:.4f}"
-
-        if bullish_pred and bullish_osc:
-            return "BUY", f"予測↑:{direction_score} & RSI or MACD 強気 | {reason_log}"
-        elif bearish_pred and bearish_osc:
-            return "SELL", f"予測↓:{bearish_score} & RSI or MACD 弱気 | {reason_log}"
+        # ▼ 通常の方向性あり判定
+        if direction_score > bearish_score:
+            return "BUY", f"予測↑:{direction_score} > ↓:{bearish_score}"
+        elif bearish_score > direction_score:
+            return "SELL", f"予測↓:{bearish_score} > ↑:{direction_score}"
         else:
-            reasons = []
-            if not bullish_pred and not bearish_pred:
-                reasons.append("方向性弱い")
-            if not bullish_osc and not bearish_osc:
-                reasons.append("オシレータ不一致")
-            return "NO-TRADE", " / ".join(reasons) + " | " + reason_log
+            return "NO-TRADE", f"予測拮抗 (↑:{direction_score} = ↓:{bearish_score})"
 
     except Exception as e:
         return "NO-TRADE", f"PhaseB エラー: {str(e)}"

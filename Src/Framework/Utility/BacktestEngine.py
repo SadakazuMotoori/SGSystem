@@ -10,20 +10,13 @@ from Framework.MTSystem.MTManager import (
     ClosePosition
 )
 
-def is_take_profit_met(prices, entry_index, current_index, is_buy, lookback, min_profit):
+def is_take_profit_met_trailing(prices, entry_index, current_index, is_buy, max_or_min_price, trailing_value):
     if is_buy:
-        window = prices[entry_index:current_index + 1]
-        if len(window) >= lookback:
-            max_in_window = max(window[-lookback:])
-            profit = max_in_window - prices[entry_index]
-            return profit >= min_profit, profit
+        stop_price = max_or_min_price - trailing_value
+        return prices[current_index] <= stop_price
     else:
-        window = prices[entry_index:current_index + 1]
-        if len(window) >= lookback:
-            min_in_window = min(window[-lookback:])
-            profit = prices[entry_index] - min_in_window
-            return profit >= min_profit, profit
-    return False, 0.0
+        stop_price = max_or_min_price + trailing_value
+        return prices[current_index] >= stop_price
 
 def plot_entry_points_chart(df, logs):
     plt.figure(figsize=(12, 6))
@@ -46,7 +39,7 @@ def plot_entry_points_chart(df, logs):
     plt.grid()
     plt.show()
 
-def run_backtest(df, predicted_close, period_days=5, lookback=3):
+def run_backtest(df, predicted_close, period_days=5, lookback=3, use_trailing_tp=True):
     ResetPositionState()
 
     total_trades = 0
@@ -63,6 +56,12 @@ def run_backtest(df, predicted_close, period_days=5, lookback=3):
 
     for i in range(len(df) - period_days):
         if IsPositionActive(i):
+            entry_logs.append({
+                "date": df.loc[i, "time"],
+                "entry_price": df.loc[i, "close"],
+                "type": "SKIP",
+                "reason": "ポジションが未決済のためスキップ"
+            })
             continue
 
         current_df = df.iloc[:i+1].copy()
@@ -94,41 +93,48 @@ def run_backtest(df, predicted_close, period_days=5, lookback=3):
         entry_index = i
         close_entry = df.loc[i, "close"]
 
-        if signal == "BUY":
-            is_buy = True
-        elif signal == "SELL":
-            is_buy = False
-        else:
-            continue
+        is_buy = signal == "BUY"
 
         total_trades += 1
         SetPositionActive(period_days, i)
         success = False
 
         atr_now = df.loc[i, "ATR_14"]
-        tp_threshold = atr_now * 1.2
+        trailing_stop = atr_now * 1.5
+
+        max_or_min_price = close_entry
 
         for j in range(1, period_days + 1):
             current_index = i + j
-            tp_met, profit = is_take_profit_met(
-                df["close"], i, current_index,
-                is_buy=is_buy,
-                lookback=lookback,
-                min_profit=tp_threshold
-            )
+            current_price = df.loc[current_index, "close"]
+
             if is_buy:
-                drawdown = close_entry - df.loc[current_index, "close"]
+                max_or_min_price = max(max_or_min_price, current_price)
+                drawdown = close_entry - current_price
             else:
-                drawdown = df.loc[current_index, "close"] - close_entry
+                max_or_min_price = min(max_or_min_price, current_price)
+                drawdown = current_price - close_entry
+
             max_drawdown = max(max_drawdown, drawdown)
+
+            if use_trailing_tp:
+                tp_met = is_take_profit_met_trailing(
+                    df["close"], i, current_index,
+                    is_buy=is_buy,
+                    max_or_min_price=max_or_min_price,
+                    trailing_value=trailing_stop
+                )
+            else:
+                tp_met = False
 
             if tp_met:
                 win_trades += 1
+                profit = current_price - close_entry if is_buy else close_entry - current_price
                 total_profit += profit
                 total_profit_amount += profit
                 entry_logs.append({
                     "date": df.loc[current_index, "time"],
-                    "entry_price": df.loc[current_index, "close"],
+                    "entry_price": current_price,
                     "type": "TP"
                 })
                 tp_success_count += 1
@@ -137,11 +143,8 @@ def run_backtest(df, predicted_close, period_days=5, lookback=3):
                 break
 
         if not success:
-            if is_buy:
-                profit = df.loc[i + period_days, "close"] - close_entry
-            else:
-                profit = close_entry - df.loc[i + period_days, "close"]
-
+            final_price = df.loc[i + period_days, "close"]
+            profit = final_price - close_entry if is_buy else close_entry - final_price
             total_profit += profit
             if profit > 0:
                 win_trades += 1
@@ -181,14 +184,9 @@ def run_backtest(df, predicted_close, period_days=5, lookback=3):
     for log in entry_logs:
         if log["type"] == "SKIP":
             print(f"[SKIP] {log['date']}: {log['reason']}")
-            break
 
-    # ログ抽出
     print(f"[期間] {df['time'].iloc[0]} ～ {df['time'].iloc[-1]}")
-    analyze_skips_by_period(  result["entry_logs"],
-                              start_date=datetime(2023, 4, 1),
-                              end_date=datetime(2023, 7, 31)
-                           )
+    analyze_skips_by_period(result["entry_logs"], start_date=datetime(2023, 4, 1), end_date=datetime(2023, 7, 31))
     return result
 
 def analyze_skips_by_period(entry_logs, start_date, end_date):
