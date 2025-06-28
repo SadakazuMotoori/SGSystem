@@ -29,7 +29,7 @@ def plot_entry_points_chart(df, logs):
     sell_x = [log['date'] for log in logs if log['type'] == 'SELL']
     sell_y = [log['entry_price'] for log in logs if log['type'] == 'SELL']
     tp_x = [log['date'] for log in logs if log['type'] == 'TP']
-    tp_y = [log['entry_price'] for log in logs if log['type'] == 'TP']
+    tp_y = [log['exit_price'] for log in logs if log['type'] == 'TP']
 
     plt.scatter(buy_x, buy_y, color='green', label='BUY', marker='^')
     plt.scatter(sell_x, sell_y, color='red', label='SELL', marker='v')
@@ -100,7 +100,7 @@ def run_backtest(df, predicted_close, period_days=5, lookback=3, use_trailing_tp
         success = False
 
         atr_now = df.loc[i, "ATR_14"]
-        trailing_stop = atr_now * 1.5
+        trailing_stop = atr_now * 0.8
 
         max_or_min_price = close_entry
 
@@ -134,8 +134,12 @@ def run_backtest(df, predicted_close, period_days=5, lookback=3, use_trailing_tp
                 total_profit_amount += profit
                 entry_logs.append({
                     "date": df.loc[current_index, "time"],
-                    "entry_price": current_price,
-                    "type": "TP"
+                    "entry_price": close_entry,
+                    "exit_price": current_price,
+                    "type": "TP",
+                    "position": "BUY" if is_buy else "SELL",
+                    "profit": profit,
+                    "tp_type": "trailing"
                 })
                 tp_success_count += 1
                 success = True
