@@ -69,16 +69,18 @@ def main():
                 print("[INFO] トレンドシグナルなし → LSTMスキップ")
                 _enableTrade = False
 
-        # ===================================================
-        # PhaseB（LSTMモデル実行：予測）
-        # ===================================================
-        if _enableTrade:
-            df = train_and_predict_lstm(df,True)
-
         # ③ チャート描画（トレンドラベル含む＆LSTM予測表示）
 #        df_zoom = df.loc["2023-06-01":"2023-10-15"]
 #        df = df.loc["2024-08-01":"2024-11-15"]
         draw_chart_with_trend_labels(df)
+
+        # ===================================================
+        # PhaseB（LSTMモデル実行：予測）
+        # ===================================================
+        if not _enableTrade:
+            df = train_and_predict_lstm(df,True)
+
+        
 
     print("==========SGSystem End==========")
 
