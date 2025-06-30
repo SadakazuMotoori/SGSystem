@@ -13,9 +13,13 @@ def create_sequences(df, sequence_length=150, target_column="close"):
         "open", "high", "low", "close", "volume", "spread", "real_volume",
         "RSI_14", "MACD", "MACD_signal", "MACD_diff",
         "Support", "Resistance",
-        "SMA_50", "ATR_14", "delta_close"
+        "SMA_50", "ATR_14", "delta_close",
+        "ADX_14", "+DI", "-DI", "PSAR"
     ]
     feature_columns = [f for f in features if f != target_column]
+
+    # 欠損がある行は除去（とくにRSI・MACD系に注意）
+    df = df.dropna(subset=features).copy()
 
     target_scaler = MinMaxScaler()
     feature_scaler = MinMaxScaler()
@@ -34,7 +38,9 @@ def create_sequences(df, sequence_length=150, target_column="close"):
 
 def build_lstm_model(input_shape):
     model = Sequential()
-    model.add(LSTM(units=64, return_sequences=False, input_shape=input_shape))
+    model.add(LSTM(units=64, return_sequences=True, input_shape=input_shape))
+    model.add(Dropout(0.2))
+    model.add(LSTM(units=32))
     model.add(Dropout(0.2))
     model.add(Dense(1))
     model.compile(optimizer='adam', loss='mean_squared_error')
@@ -62,94 +68,100 @@ def evaluate_model(y_true, y_pred, show_plt):
         plt.tight_layout()
         plt.show()
 
-def train_and_predict_lstm(df, show_plt=False, evaluate=True):
-    print("[INFO] 欠損値除去中...")
-    df = df.dropna().copy()
-    print(df.isnull().sum())
+# ===================================================
+# LSTMモデルの学習・予測
+# - 入力: 特徴量付きDataFrame（df）
+# - 出力: 翌日の終値予測値（1ステップ）
+# ===================================================
+def train_and_predict_lstm(df, show_plot=False):
+    print("[INFO] LSTM Phase開始")
 
-    print("[INFO] モデル構築と学習開始")
-    X, y, target_scaler, feature_scaler = create_sequences(df)
+    # ===================================================
+    # 特徴量選定（過去60日分を使って翌日の終値を予測）
+    # ===================================================
+    sequence_length = 120
+    FEATURES = [
+        "close", "volume", "SMA_20", "SMA_50", "RSI_14",
+        "MACD", "MACD_signal", "MACD_diff",
+        "Support", "Resistance", "ATR_14",
+        "ADX_14", "+DI", "-DI", "PSAR"
+    ]
 
-    print(f"X shape: {X.shape}")
-    print(f"y shape: {y.shape}")
+    df_feat = df[FEATURES].copy().dropna()
+    df_target = df["close"].shift(-1).dropna()
 
-    split = int(0.8 * len(X))
-    X_train, X_val = X[:split], X[split:]
-    y_train, y_val = y[:split], y[split:]
+    # 同期処理
+    min_len = min(len(df_feat), len(df_target))
+    df_feat, df_target = df_feat[:min_len], df_target[:min_len]
 
-    model = build_lstm_model((X.shape[1], X.shape[2]))
-    early_stop = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
+    # 特徴量とターゲットを個別にスケーリング
+    feature_scaler = MinMaxScaler()
+    target_scaler = MinMaxScaler()
 
-    model.fit(
-        X_train, y_train,
-        epochs=100,
-        batch_size=16,
-        validation_data=(X_val, y_val),
-        callbacks=[early_stop],
-        verbose=1
-    )
+    X_scaled = feature_scaler.fit_transform(df_feat)
+    y_scaled = target_scaler.fit_transform(df_target.values.reshape(-1, 1))
 
-    val_pred = model.predict(X_val)
+    # シーケンス化（60ステップ）
+    X, y = [], []
+    for i in range(sequence_length, len(X_scaled)):
+        X.append(X_scaled[i-sequence_length:i])
+        y.append(y_scaled[i])  # y もスケーリング後を使用
 
-    if evaluate:
-        y_val_actual = target_scaler.inverse_transform(y_val.reshape(-1, 1)).flatten()
-        val_pred_actual = target_scaler.inverse_transform(val_pred.reshape(-1, 1)).flatten()
-        evaluate_model(y_val_actual, val_pred_actual, show_plt)
+    X, y = np.array(X), np.array(y)
+    print(f"[INFO] 学習データ: {X.shape}, 正解ラベル: {y.shape}")
 
-    predictions = []
-    future_df = df.copy()
+    # ===================================================
+    # モデル構築（2層LSTM + Dropout）
+    # ===================================================
+    model = Sequential()
+    model.add(LSTM(units=64, return_sequences=True, input_shape=(X.shape[1], X.shape[2])))
+    model.add(Dropout(0.2))
+    model.add(LSTM(units=32))
+    model.add(Dropout(0.2))
+    model.add(Dense(1))
 
-    for i in range(5):
-        X, y, target_scaler, feature_scaler = create_sequences(future_df)
-        model = build_lstm_model((X.shape[1], X.shape[2]))
-        early_stop = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
-        model.fit(
-            X[:-1], y[:-1],
-            epochs=100,
-            batch_size=16,
-            validation_split=0.2,
-            callbacks=[early_stop],
-            verbose=0
-        )
+    model.compile(optimizer='adam', loss='mean_squared_error')
+    model.fit(X, y, epochs=30, batch_size=32, verbose=0)
 
-        next_input = X[-1].reshape(1, X.shape[1], X.shape[2])
-        next_scaled = model.predict(next_input)
+    # ===================================================
+    # 予測と評価（逆スケーリングしてから評価）
+    # ===================================================
+    y_pred_scaled = model.predict(X)
+    y_true = target_scaler.inverse_transform(y)
+    y_pred = target_scaler.inverse_transform(y_pred_scaled)
 
-        predicted_close = target_scaler.inverse_transform(next_scaled)[0][0]
-        predictions.append(predicted_close)
+    rmse = np.sqrt(mean_squared_error(y_true, y_pred))
+    mae = mean_absolute_error(y_true, y_pred)
+    r2 = r2_score(y_true, y_pred)
 
-        new_row = future_df.iloc[-1].copy()
-        new_row['close'] = predicted_close
-        for col in future_df.columns:
-            if col != 'close':
-                new_row[col] = future_df.iloc[-1][col]
-        future_df.loc[future_df.index[-1] + pd.Timedelta(days=1)] = new_row
+    print("[Model Evaluation]")
+    print(f"RMSE: {rmse:.4f}")
+    print(f"MAE:  {mae:.4f}")
+    print(f"R^2:  {r2:.4f}")
 
-    print("[PREDICTED] 5日間の予測終値:")
-    for i, pred in enumerate(predictions, 1):
-        print(f" Day {i}: {pred:.3f}")
-
-    plot_days = 30
-    past_dates = df.index[-plot_days:]
-    past_values = df["close"].iloc[-plot_days:].tolist()
-
-    last_date = df.index[-1].date()
-    future_dates = [last_date + pd.Timedelta(days=i) for i in range(1, 6)]
-
-    if show_plt:
-        plt.figure(figsize=(12, 6))
-        plt.plot(past_dates, past_values, label="Actual Close", color="blue", marker="o")
-        plt.plot(future_dates, predictions, label="Predicted Close", color="red", linestyle="--", marker="x")
-        plt.axvline(past_dates[-1], color="gray", linestyle=":", label="Prediction Start")
-        plt.title("USD/JPY Close Price: Past 30 Days + 5-Day Forecast")
-        plt.xlabel("Date")
-        plt.ylabel("Close Price")
+    # ===================================================
+    # 可視化（希望時のみ）
+    # ===================================================
+    if show_plot:
+        plt.figure(figsize=(12, 5))
+        plt.plot(y_true, label="True")
+        plt.plot(y_pred, label="Predicted")
+        plt.title("LSTM Forecast vs Actual")
         plt.legend()
         plt.grid(True)
         plt.tight_layout()
         plt.show()
 
-    return predictions
+    # ===================================================
+    # 直近の予測を返す（[-1]）
+    # ===================================================
+    latest_sequence = X_scaled[-sequence_length:]
+    latest_sequence = np.expand_dims(latest_sequence, axis=0)
+    predicted_scaled = model.predict(latest_sequence)[0][0]
+    predicted_price = target_scaler.inverse_transform([[predicted_scaled]])[0][0]
+    print(f"[予測] 翌日の終値: {predicted_price:.3f}")
+
+    return predicted_price
 
 def generate_predicted_series(df, sequence_length=90, target_column="close"):
     print("[INFO] 逐次予測シリーズ生成を開始...")
