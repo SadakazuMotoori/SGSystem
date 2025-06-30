@@ -12,7 +12,7 @@ def show_trend_labels_in_period(df, start_date, end_date):
     print(f"\n[Trend 判定ログ] {start_date} 〜 {end_date}")
     print(df_period)
     
-def apply_trend_labels(df, period=90, slope_threshold=0.01, adx_threshold=25, verbose=False):
+def apply_trend_labels(df, period=90, slope_threshold=0.05, adx_threshold=25, verbose=False):
     labels = [None] * len(df)
 
     for i in range(period, len(df)):

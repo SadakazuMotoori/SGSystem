@@ -1,12 +1,12 @@
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
+import numpy                as np
+import pandas               as pd
+import matplotlib.pyplot    as plt
 
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-from keras.models import Sequential
-from keras.layers import LSTM, Dense, Dropout
-from keras.callbacks import EarlyStopping
+from sklearn.preprocessing  import MinMaxScaler
+from sklearn.metrics        import mean_squared_error, mean_absolute_error, r2_score
+from keras.models           import Sequential
+from keras.layers           import LSTM, Dense, Dropout
+from keras.callbacks        import EarlyStopping
 
 def create_sequences(df, sequence_length=150, target_column="close"):
     features = [
