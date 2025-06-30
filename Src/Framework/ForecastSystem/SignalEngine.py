@@ -1,30 +1,114 @@
+import numpy as np
 import pandas as pd
 
-def PhaseA_Filter(df: pd.DataFrame) -> tuple[bool, str]:
-    try:
-        if len(df) < 6:
-            return False, "データ不足 (<6行)"
+from sklearn.linear_model import LinearRegression
+from ta.trend import ADXIndicator, PSARIndicator
 
-        sma_today = df["SMA_20"].iloc[-1]
-        sma_past = df["SMA_20"].iloc[-6]
-        atr_today = df["ATR_14"].iloc[-1]
+def show_trend_labels_in_period(df, start_date, end_date):
+    """
+    指定された期間におけるトレンドラベルの確認用関数。
+    """
+    df_period = df.loc[start_date:end_date, ["close", "Trend_Label"]]
+    print(f"\n[Trend 判定ログ] {start_date} 〜 {end_date}")
+    print(df_period)
+    
+def apply_trend_labels(df, period=90, slope_threshold=0.01, adx_threshold=25, verbose=False):
+    labels = [None] * len(df)
 
-        # 緩和された閾値設定
-        atr_threshold_ratio = 0.3  # 従来の0.4より緩め
-        fixed_threshold = 0.03     # 最小ライン（pips変換で約3pips相当）
-        atr_threshold = atr_today * atr_threshold_ratio
-        # 修正後（正しく最低限のフィルタとして機能させる）
-        dynamic_threshold = max(fixed_threshold, atr_threshold)
+    for i in range(period, len(df)):
+        sub_df = df.iloc[:i+1]  # 過去i本まで（t=iが現在）
+        result = PhaseA_Filter(
+            sub_df,
+            period=period,
+            slope_threshold=slope_threshold,
+            adx_threshold=adx_threshold,
+            verbose=verbose
+        )
+        labels[i] = result
 
-        sma_diff = sma_today - sma_past
+    df["Trend_Label"] = labels
+    return df
 
-        if abs(sma_diff) > dynamic_threshold:
-            return True, "通過"
-        else:
-            return False, f"PhaseA不成立: SMA変化={sma_diff:.5f}, ATR={atr_today:.5f}, 閾値={dynamic_threshold:.5f}"
+def PhaseA_Filter(df, period=90, slope_threshold=0.01, adx_threshold=25, verbose=True):
+    """
+    t-1時点を基点に、トレンド方向を 'uptrend', 'downtrend', 'no_trend' のいずれかで判定。
+    判定条件：
+    - 線形回帰による終値傾き
+    - ADX > adx_threshold
+    - SMA20 > SMA50（上昇） / SMA20 < SMA50（下降）
+    - PSARが価格の下（上昇） / 上（下降）
+    """
 
-    except Exception as e:
-        return False, f"PhaseA エラー: {str(e)}"
+    if len(df) < period + 1:
+        if verbose:
+            print("[WARN] データ不足：{}本必要（現在{}本）".format(period+1, len(df)))
+        return "no_trend"
+
+    # 対象データ：t-N〜t-1（直近は除外）
+    sub_df = df.iloc[-period-1:-1]
+    y = sub_df["close"].values.reshape(-1, 1)
+    X = np.arange(period).reshape(-1, 1)
+    slope = LinearRegression().fit(X, y).coef_[0][0]
+
+    # ADX
+    if "ADX_14" not in df.columns:
+        adx_calc = ADXIndicator(high=df["high"], low=df["low"], close=df["close"], window=14)
+        df["ADX_14"] = adx_calc.adx()
+        df["+DI"] = adx_calc.adx_pos()
+        df["-DI"] = adx_calc.adx_neg()
+
+    adx_val = df["ADX_14"].iloc[-2]
+    plus_di = df["+DI"].iloc[-2]
+    minus_di = df["-DI"].iloc[-2]
+
+    # SMA
+    sma20 = df["SMA_20"].iloc[-2]
+    sma50 = df["SMA_50"].iloc[-2]
+
+    # PSAR
+    if "PSAR" not in df.columns:
+        psar_calc = PSARIndicator(high=df["high"], low=df["low"], close=df["close"])
+        df["PSAR"] = psar_calc.psar()
+
+    price_t1 = df["close"].iloc[-2]
+    psar_val = df["PSAR"].iloc[-2]
+
+    # --- ログ出力 ---
+    if verbose:
+        print("=== PhaseA_Filter 判定ログ ===")
+        print(f"[期間]         過去{period}本（t-1基準）")
+        print(f"[SLOPE]        {slope:.5f}（閾値 ±{slope_threshold}）")
+        print(f"[ADX]          {adx_val:.2f}（閾値 {adx_threshold}）")
+        print(f"[+DI/-DI]      +DI={plus_di:.2f}, -DI={minus_di:.2f}")
+        print(f"[SMA]          SMA20={sma20:.2f}, SMA50={sma50:.2f}")
+        print(f"[PSAR]         PSAR={psar_val:.2f}, close(t-1)={price_t1:.2f}")
+        print("-------------------------------")
+
+    # --- 判定ロジック ---
+    if (
+        slope > slope_threshold and
+        adx_val > adx_threshold and
+        sma20 > sma50 and
+        plus_di > minus_di and
+        psar_val < price_t1
+    ):
+        result = "uptrend"
+    elif (
+        slope < -slope_threshold and
+        adx_val > adx_threshold and
+        sma20 < sma50 and
+        minus_di > plus_di and
+        psar_val > price_t1
+    ):
+        result = "downtrend"
+    else:
+        result = "no_trend"
+
+    if verbose:
+        print(f"[RESULT]       ⇒ {result.upper()}")
+        print("==============================\n")
+
+    return result
 
 
 def PhaseB_Trigger(predicted_close: list[float], df: pd.DataFrame) -> tuple[str, str]:

@@ -41,7 +41,7 @@ def MTManager_Initialize():
 # - 最新日から過去へ指定数分取得（営業日ベース）
 # - RSI・MACD・サポレジを計算し、チャートを表示
 # ===================================================
-def MTManager_UpdateIndicators(days_back=600, show_prot = True):
+def MTManager_UpdateIndicators(days_back=600, show_prot = False):
     print("[INFO] インジケータ更新と学習開始")
 
     # MT5からローソク足データを取得（最新からdays_back件分）
@@ -79,6 +79,16 @@ def MTManager_UpdateIndicators(days_back=600, show_prot = True):
     atr_indicator = AverageTrueRange(high=df["high"], low=df["low"], close=df["close"], window=14)
     df["ATR_14"] = atr_indicator.average_true_range()
 
+    # ADX + DI系を追加（PhaseA_Filter用）
+    adx_calc = ta.trend.ADXIndicator(high=df["high"], low=df["low"], close=df["close"], window=14)
+    df["ADX_14"] = adx_calc.adx()
+    df["+DI"] = adx_calc.adx_pos()
+    df["-DI"] = adx_calc.adx_neg()
+
+    # PSARを追加（PhaseA_Filter用）
+    psar_calc = ta.trend.PSARIndicator(high=df["high"], low=df["low"], close=df["close"])
+    df["PSAR"] = psar_calc.psar()
+
     # 🔽 追加（変化率指標）
     df["delta_close"] = df["close"].diff().fillna(0)
 
@@ -112,7 +122,7 @@ def MTManager_UpdateIndicators(days_back=600, show_prot = True):
     # ===================================================
     # LSTMモデル実行（予測＆チャート表示）
     # ===================================================
-    train_and_predict_lstm(df)
+    #train_and_predict_lstm(df,True)
 
     return df
 
@@ -141,3 +151,80 @@ def SetPositionActive(period_length, current_index):
 def ClosePosition():
     global _position_active
     _position_active = False
+
+
+def create_trend_labels(df):
+    up_labels   = []
+    down_labels = []
+
+    for i in range(len(df)):
+        label = df["Trend_Label"].iloc[i]
+        if label == "uptrend":
+            up_labels.append((df.index[i], df["low"].iloc[i] * 0.995))
+        elif label == "downtrend":
+            down_labels.append((df.index[i], df["high"].iloc[i] * 1.005))
+
+    return up_labels, down_labels
+
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+import mplfinance as mpf
+from matplotlib.dates import DateFormatter
+
+def draw_chart_with_trend_labels(df):
+    import mplfinance as mpf
+    import matplotlib.pyplot as plt
+
+    # 追加指標
+    apds = [
+        mpf.make_addplot(df["Support"], panel=0, color='green', linestyle='--', width=1),
+        mpf.make_addplot(df["Resistance"], panel=0, color='red', linestyle='--', width=1),
+        mpf.make_addplot(df["RSI_14"], panel=1, color='purple', ylabel='RSI'),
+        mpf.make_addplot([30]*len(df), panel=1, color='gray', linestyle='--'),
+        mpf.make_addplot([70]*len(df), panel=1, color='gray', linestyle='--'),
+        mpf.make_addplot(df["MACD"], panel=2, color='blue', ylabel='MACD'),
+        mpf.make_addplot(df["MACD_signal"], panel=2, color='orange'),
+        mpf.make_addplot(df["MACD_diff"], panel=2, type='bar', color='dimgray', alpha=0.5)
+    ]
+
+    # チャート描画（Figure取得）
+    fig, axes = mpf.plot(df,
+                         type='candle',
+                         style='charles',
+                         mav=(5, 25, 75),
+                         volume=True,
+                         addplot=apds,
+                         panel_ratios=(4, 1, 1),
+                         title='USD/JPY - MA + RSI + MACD + Trend',
+                         ylabel='Price',
+                         ylabel_lower='Volume',
+                         figsize=(14, 10),
+                         returnfig=True)
+
+    # ローソク足パネル
+    ax_price = axes[0]
+
+    # y軸調整用オフセット
+    offset = (df["high"].max() - df["low"].min()) * 0.01
+
+    # ===============================
+    # トレンドラベルを矢印で描画する
+    # ===============================
+    for i in range(len(df)):
+        label = df["Trend_Label"].iloc[i]
+
+        if label == "uptrend":
+            price = df["low"].iloc[i] * 0.995
+            ax_price.scatter([i], [price], marker='^', color='green', s=80, zorder=5)
+            print(f"[PLOT] {df.index[i].date()} ↑ {price:.2f}")
+        elif label == "downtrend":
+            price = df["high"].iloc[i] * 1.005
+            ax_price.scatter([i], [price], marker='v', color='red', s=80, zorder=5)
+            print(f"[PLOT] {df.index[i].date()} ↓ {price:.2f}")
+
+    # y軸の表示範囲を調整
+    ax_price.set_ylim(df["low"].min() - 3 * offset, df["high"].max() + 3 * offset)
+
+    # レイアウト調整
+    plt.tight_layout()
+    plt.show()
