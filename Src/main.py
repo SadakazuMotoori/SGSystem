@@ -54,28 +54,31 @@ def main():
 #        notifier = NotificationManager()
 #        notifier.send_email("【SGSystem通知】テストメール","ルークより：これはGmailによる自動通知テストだ。")
 
-        # ① インジケータ取得（ついでにトレンド情報も取得）
-        df, trend_signal = MTManager_UpdateIndicators()
+        _enableTrade = True
+        # ===================================================
+        # PhaseA（トレンド確認）
+        # ===================================================
+        if _enableTrade:
+            # ① インジケータ取得（ついでにトレンド情報も取得）
+            df, trend_signal = MTManager_UpdateIndicators()
 
-        if trend_signal == "uptrend":
-            # 買い候補としてLSTMへ
-            print("[INFO] 買いシグナル")
-        elif trend_signal == "downtrend":
-            # 売り候補としてLSTMへ
-            print("[INFO] 売りシグナル")
-        else:
-            print("[INFO] トレンドシグナルなし → LSTMスキップ")
-    
-        # ③ チャート描画（トレンドラベル含む）
+            if (trend_signal == "uptrend") or (trend_signal == "downtrend"):
+                # 買い候補/売り候補としてLSTMへ
+                print("[INFO] シグナル発生 = ",trend_signal)
+            else:
+                print("[INFO] トレンドシグナルなし → LSTMスキップ")
+                _enableTrade = False
+
+        # ===================================================
+        # PhaseB（LSTMモデル実行：予測）
+        # ===================================================
+        if _enableTrade:
+            df = train_and_predict_lstm(df,True)
+
+        # ③ チャート描画（トレンドラベル含む＆LSTM予測表示）
 #        df_zoom = df.loc["2023-06-01":"2023-10-15"]
 #        df = df.loc["2024-08-01":"2024-11-15"]
         draw_chart_with_trend_labels(df)
-
-
-        # ④ ログ確認
-#        print(df[["close", "Trend_Label"]].tail(10))
-#        show_trend_labels_in_period(df, "2023-06-01", "2023-11-01")
-#        show_trend_labels_in_period(df, "2024-08-01", "2024-11-15")
 
     print("==========SGSystem End==========")
 

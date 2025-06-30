@@ -153,11 +153,6 @@ def MTManager_UpdateIndicators(days_back=600):
     df = apply_trend_labels(df, period=60, slope_threshold=0.005, adx_threshold=20, verbose=False)
 
     # ===================================================
-    # LSTMモデル実行（予測＆チャート表示）
-    # ===================================================
-    #train_and_predict_lstm(df,True)
-
-    # ===================================================
     # 前日のトレンドラベルを確認
     # ===================================================
     trend_signal = None
