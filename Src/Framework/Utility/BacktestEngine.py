@@ -1,3 +1,4 @@
+"""
 import matplotlib.pyplot as plt
 import pandas as pd
 
@@ -200,3 +201,4 @@ def analyze_skips_by_period(entry_logs, start_date, end_date):
             log_date = pd.to_datetime(log["date"])
             if start_date <= log_date <= end_date:
                 print(f"{log['date']} | {log['reason']}")
+"""

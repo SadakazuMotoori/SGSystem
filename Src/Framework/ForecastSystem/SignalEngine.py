@@ -1,35 +1,9 @@
-import numpy as np
-import pandas as pd
+import numpy                as np
 
-from sklearn.linear_model import LinearRegression
-from ta.trend import ADXIndicator, PSARIndicator
+from sklearn.linear_model   import LinearRegression
+from ta.trend               import ADXIndicator, PSARIndicator
 
-def show_trend_labels_in_period(df, start_date, end_date):
-    """
-    指定された期間におけるトレンドラベルの確認用関数。
-    """
-    df_period = df.loc[start_date:end_date, ["close", "Trend_Label"]]
-    print(f"\n[Trend 判定ログ] {start_date} 〜 {end_date}")
-    print(df_period)
-    
-def apply_trend_labels(df, period=90, slope_threshold=0.05, adx_threshold=25, verbose=False):
-    labels = [None] * len(df)
-
-    for i in range(period, len(df)):
-        sub_df = df.iloc[:i+1]  # 過去i本まで（t=iが現在）
-        result = PhaseA_Filter(
-            sub_df,
-            period=period,
-            slope_threshold=slope_threshold,
-            adx_threshold=adx_threshold,
-            verbose=verbose
-        )
-        labels[i] = result
-
-    df["Trend_Label"] = labels
-    return df
-
-def PhaseA_Filter(df, period=90, slope_threshold=0.01, adx_threshold=25, verbose=True):
+def __PhaseA_Filter(df, period=90, slope_threshold=0.01, adx_threshold=25, verbose=True):
     """
     t-1時点を基点に、トレンド方向を 'uptrend', 'downtrend', 'no_trend' のいずれかで判定。
     判定条件：
@@ -110,36 +84,27 @@ def PhaseA_Filter(df, period=90, slope_threshold=0.01, adx_threshold=25, verbose
 
     return result
 
+def SignalEngine_PhaseA_Filter(df, period=90, slope_threshold=0.05, adx_threshold=25, verbose=False):
+    labels = [None] * len(df)
 
-def PhaseB_Trigger(predicted_close: list[float], df: pd.DataFrame) -> tuple[str, str]:
-    try:
-        if not predicted_close or len(predicted_close) < 2:
-            return "NO-TRADE", "予測値不足"
+    for i in range(period, len(df)):
+        sub_df = df.iloc[:i+1]  # 過去i本まで（t=iが現在）
+        result = __PhaseA_Filter( sub_df,
+                                  period=period,
+                                  slope_threshold=slope_threshold,
+                                  adx_threshold=adx_threshold,
+                                  verbose=verbose
+                                )
+        labels[i] = result
 
-        latest = df.iloc[-1]
-        direction_score = sum(predicted_close[i] < predicted_close[i + 1] for i in range(len(predicted_close) - 1))
-        bearish_score = sum(predicted_close[i] > predicted_close[i + 1] for i in range(len(predicted_close) - 1))
+    df["Trend_Label"] = labels
+    return df
 
-        # ▼ 予測が横ばいの場合はSMA傾斜で方向を判断
-        if direction_score == 0 and bearish_score == 0:
-            sma_today = df["SMA_20"].iloc[-1]
-            sma_past = df["SMA_20"].iloc[-6]
-            sma_slope = sma_today - sma_past
+def SignalEngine_PhaseB_Trigger(df):
+    result = False
 
-            if sma_slope > 0:
-                return "BUY", f"予測横ばい → SMA傾斜BUY判断 (傾き={sma_slope:.5f})"
-            elif sma_slope < 0:
-                return "SELL", f"予測横ばい → SMA傾斜SELL判断 (傾き={sma_slope:.5f})"
-            else:
-                return "NO-TRADE", f"予測横ばいかつSMAフラット (傾き={sma_slope:.5f})"
-
-        # ▼ 通常の方向性あり判定
-        if direction_score > bearish_score:
-            return "BUY", f"予測↑:{direction_score} > ↓:{bearish_score}"
-        elif bearish_score > direction_score:
-            return "SELL", f"予測↓:{bearish_score} > ↑:{direction_score}"
-        else:
-            return "NO-TRADE", f"予測拮抗 (↑:{direction_score} = ↓:{bearish_score})"
-
-    except Exception as e:
-        return "NO-TRADE", f"PhaseB エラー: {str(e)}"
+    # try:
+    # except Exception as e:
+        # return "NO-TRADE", f"PhaseB エラー: {str(e)}"
+    
+    return result
