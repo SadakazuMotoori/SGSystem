@@ -15,6 +15,7 @@ def LSTMModel_PredictLSTM(df, show_plot=False):
     print("[INFO] LSTM Phase開始")
 
     sequence_length = 120
+    prediction_steps = 5  # ← 5日後まで
     FEATURES = [
         "close", "volume", "SMA_20", "SMA_50", "RSI_14",
         "MACD", "MACD_signal", "MACD_diff",
@@ -23,31 +24,31 @@ def LSTMModel_PredictLSTM(df, show_plot=False):
     ]
 
     df_feat = df[FEATURES].copy().dropna()
-    df_target = df["close"].shift(-1).dropna()
+    df_target = df["close"].copy()
 
-    min_len = min(len(df_feat), len(df_target))
-    df_feat, df_target = df_feat[:min_len], df_target[:min_len]
-
+    # 特徴量とターゲットをスケーリング
     feature_scaler = MinMaxScaler()
     target_scaler = MinMaxScaler()
 
     X_scaled = feature_scaler.fit_transform(df_feat)
     y_scaled = target_scaler.fit_transform(df_target.values.reshape(-1, 1))
 
+    # シーケンスとターゲットを構築（マルチステップ）
     X, y = [], []
-    for i in range(sequence_length, len(X_scaled)):
+    for i in range(sequence_length, len(X_scaled) - prediction_steps):
         X.append(X_scaled[i-sequence_length:i])
-        y.append(y_scaled[i])
+        y.append(y_scaled[i:i+prediction_steps].flatten())
 
     X, y = np.array(X), np.array(y)
     print(f"[INFO] 学習データ: {X.shape}, 正解ラベル: {y.shape}")
 
+    # モデル構築
     model = Sequential()
     model.add(LSTM(units=64, return_sequences=True, input_shape=(X.shape[1], X.shape[2])))
     model.add(Dropout(0.2))
     model.add(LSTM(units=32))
     model.add(Dropout(0.2))
-    model.add(Dense(1))
+    model.add(Dense(prediction_steps))  # 出力5個
 
     model.compile(optimizer='adam', loss='mean_squared_error')
     model.fit(X, y, epochs=30, batch_size=32, verbose=0)
@@ -65,20 +66,23 @@ def LSTMModel_PredictLSTM(df, show_plot=False):
     print(f"MAE:  {mae:.4f}")
     print(f"R^2:  {r2:.4f}")
 
+    # オプションでカーブ表示
     if show_plot:
         plt.figure(figsize=(12, 5))
-        plt.plot(y_true, label="True")
-        plt.plot(y_pred, label="Predicted")
-        plt.title("LSTM Forecast vs Actual")
+        plt.plot(y_true[:, 0], label="True")
+        plt.plot(y_pred[:, 0], label="Predicted Day+1")
+        plt.title("LSTM Forecast Day+1 vs Actual")
         plt.legend()
         plt.grid(True)
         plt.tight_layout()
         plt.show()
 
+    # 最新シーケンスから未来5日間を予測
     latest_sequence = X_scaled[-sequence_length:]
     latest_sequence = np.expand_dims(latest_sequence, axis=0)
-    predicted_scaled = model.predict(latest_sequence)[0][0]
-    predicted_price = target_scaler.inverse_transform([[predicted_scaled]])[0][0]
-    print(f"[予測] 翌日の終値: {predicted_price:.3f}")
+    future_pred_scaled = model.predict(latest_sequence)[0]
+    future_pred = target_scaler.inverse_transform(future_pred_scaled.reshape(-1, 1)).flatten()
 
-    return predicted_price, df
+    print("[予測] 5日先までの終値:", [f"{p:.2f}" for p in future_pred])
+
+    return future_pred.tolist(), df

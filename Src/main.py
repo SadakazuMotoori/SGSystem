@@ -22,48 +22,32 @@ def main():
     if _enableActual:
         if _enableTrade:
             df, trend_signal = MTManager_UpdateIndicators()
-            if (trend_signal == "uptrend") or (trend_signal == "downtrend"):
-                print("[INFO] シグナル発生 = ", trend_signal)
-                predicted_price, df = LSTMModel_PredictLSTM(df, False)
+            
+            # --- Step 1: 形成中ローソク足を取り出して保存
+            forming_candle = df.iloc[-1].copy()
 
-                next_date = df.index[-1] + pd.Timedelta(days=1)
-                df.loc[next_date] = df.iloc[-1]
-                df["LSTM_Predicted"] = np.nan
-                df.at[next_date, "LSTM_Predicted"] = predicted_price
+            # --- Step 2: 未確定足を除外
+            df = df.iloc[:-1]
 
-                MTManager_DrawChart(df)
+            # --- Step 3: LSTM予測
+            predicted_prices, df = LSTMModel_PredictLSTM(df, False)
 
-                # ============ 通知処理 ============
-                latest_rsi = df["RSI_14"].dropna().iloc[-2]
-                support = df["Support"].iloc[-2]
-                resistance = df["Resistance"].iloc[-2]
+            # --- Step 4: 形成中ローソク足を復元（次の日付で）
+            forming_date = df.index[-1] + pd.Timedelta(days=1)
+            while forming_date in df.index:
+                forming_date += pd.Timedelta(days=1)
+            df.loc[forming_date] = forming_candle
 
-                alerter.check_rsi_alert(latest_rsi)
-                alerter.check_prediction_alert(predicted_price, support, resistance)
-
-                subject = f"【SGSystem予測】{df.index[-2].date()}時点"
-                body = f""" ■ トレンドシグナル：{trend_signal}
-                            ■ LSTM予測終値：{predicted_price:.2f}
-                            ■ RSI：{latest_rsi:.2f}
-                            ■ サポートライン：{support:.2f}
-                            ■ レジスタンスライン：{resistance:.2f}
-                            （チャート画像2枚を添付）"""
-                
-                notifier.send_email(subject, body, attachments=["Asset/Log/ChartImage/chart_full.png", "Asset/Log/ChartImage/chart_zoom.png"])
-            else:
-                print("[INFO] トレンドシグナルなし → LSTMスキップ")
-                _enableTrade = False
-    else:
-        if _enableTrade:
-            df, trend_signal = MTManager_UpdateIndicators()
-            predicted_price, df = LSTMModel_PredictLSTM(df, False)
-
-            next_date = df.index[-1] + pd.Timedelta(days=1)
-            df.loc[next_date] = df.iloc[-1]
-            df["LSTM_Predicted"] = np.nan
-            df.at[next_date, "LSTM_Predicted"] = predicted_price
+            # --- Step 5: さらにその翌日から予測追加
+            for i, price in enumerate(predicted_prices):
+                future_date = forming_date + pd.Timedelta(days=i + 1)
+                while future_date in df.index:
+                    future_date += pd.Timedelta(days=1)
+                df.loc[future_date] = np.nan
+                df.at[future_date, "LSTM_Predicted"] = price
 
             MTManager_DrawChart(df)
+
 
             # ============ 通知処理 ============
             latest_rsi = df["RSI_14"].dropna().iloc[-2]
@@ -71,11 +55,61 @@ def main():
             resistance = df["Resistance"].iloc[-2]
 
             alerter.check_rsi_alert(latest_rsi)
-            alerter.check_prediction_alert(predicted_price, support, resistance)
+            alerter.check_prediction_alert(predicted_prices[0], support, resistance)
+
+            subject = f"【SGSystem予測】{df.index[-2].date()}時点"
+            body = f""" ■ トレンドシグナル：{trend_signal}
+                        ■ LSTM予測終値：[{predicted_prices[0]:.2f}, {predicted_prices[1]:.2f}, {predicted_prices[2]:.2f}, {predicted_prices[3]:.2f}, {predicted_prices[4]:.2f}]
+                        ■ RSI：{latest_rsi:.2f}
+                        ■ サポートライン：{support:.2f}
+                        ■ レジスタンスライン：{resistance:.2f}
+                        （チャート画像2枚を添付）"""
+            
+            notifier.send_email(subject, body, attachments=["Asset/Log/ChartImage/chart_full.png", "Asset/Log/ChartImage/chart_zoom.png"])
+        else:
+            print("[INFO] トレンドシグナルなし → LSTMスキップ")
+            _enableTrade = False
+    else:
+        if _enableTrade:
+            df, trend_signal = MTManager_UpdateIndicators()
+            
+            # --- Step 1: 形成中ローソク足を取り出して保存
+            forming_candle = df.iloc[-1].copy()
+
+            # --- Step 2: 未確定足を除外
+            df = df.iloc[:-1]
+
+            # --- Step 3: LSTM予測
+            predicted_prices, df = LSTMModel_PredictLSTM(df, False)
+
+            # --- Step 4: 形成中ローソク足を復元（次の日付で）
+            forming_date = df.index[-1] + pd.Timedelta(days=1)
+            while forming_date in df.index:
+                forming_date += pd.Timedelta(days=1)
+            df.loc[forming_date] = forming_candle
+
+            # --- Step 5: さらにその翌日から予測追加
+            for i, price in enumerate(predicted_prices):
+                future_date = forming_date + pd.Timedelta(days=i + 1)
+                while future_date in df.index:
+                    future_date += pd.Timedelta(days=1)
+                df.loc[future_date] = np.nan
+                df.at[future_date, "LSTM_Predicted"] = price
+
+            MTManager_DrawChart(df)
+
+
+            # ============ 通知処理 ============
+            latest_rsi = df["RSI_14"].dropna().iloc[-2]
+            support = df["Support"].iloc[-2]
+            resistance = df["Resistance"].iloc[-2]
+
+            alerter.check_rsi_alert(latest_rsi)
+            alerter.check_prediction_alert(predicted_prices[0], support, resistance)
 
             subject = f"【SGSystem予測】{df.index[-2].date()}時点"
             body = f""" ■ トレンドシグナル：{trend_signal or 'No Signal'}
-                        ■ LSTM予測終値：{predicted_price:.2f}
+                        ■ LSTM予測終値：[{predicted_prices[0]:.2f}, {predicted_prices[1]:.2f}, {predicted_prices[2]:.2f}, {predicted_prices[3]:.2f}, {predicted_prices[4]:.2f}]
                         ■ RSI：{latest_rsi:.2f}
                         ■ サポートライン：{support:.2f}
                         ■ レジスタンスライン：{resistance:.2f}

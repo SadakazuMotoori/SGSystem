@@ -46,7 +46,7 @@ def MTManager_UpdateIndicators(days_back=600):
 
     # データフレーム化・インデックス変換
     df = pd.DataFrame(rates)
-    df['time'] = pd.to_datetime(df['time'], unit='s')
+    df['time'] = pd.to_datetime(df['time'], unit='s', utc=True).dt.tz_convert('Asia/Tokyo')
     df.set_index("time", inplace=True)
     df.rename(columns={"tick_volume": "volume"}, inplace=True)
 
@@ -128,9 +128,16 @@ def MTManager_DrawChart(df):
             mpf.make_addplot(sub_df["MACD_signal"], panel=2, color='orange'),
             mpf.make_addplot(sub_df["MACD_diff"], panel=2, type='bar', color='dimgray', alpha=0.5)
         ]
-        if "LSTM_Predicted" in sub_df.columns:
+        if "LSTM_Predicted" in sub_df.columns and sub_df["LSTM_Predicted"].notna().sum() >= 2:
             apds.append(
-                mpf.make_addplot(sub_df["LSTM_Predicted"], panel=0, color='darkorange', marker='X', markersize=10)
+                mpf.make_addplot(
+                    sub_df["LSTM_Predicted"],
+                    panel=0,
+                    color='orange',
+                    width=2,
+                    linestyle='-',
+                    label='LSTM Forecast'
+                )
             )
         return apds
 
