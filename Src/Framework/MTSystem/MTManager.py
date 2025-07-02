@@ -114,10 +114,7 @@ def MTManager_DrawChart(df):
     import mplfinance as mpf
     import warnings
 
-    # ▼ すべての警告を無効化
     warnings.filterwarnings("ignore")
-
-    # ▼ 日本語対応フォントを指定（環境により 'MS Gothic', 'Meiryo', 'Yu Gothic' 等を選択可）
     matplotlib.rcParams['font.family'] = 'Meiryo'
 
     def build_addplots(sub_df):
@@ -137,9 +134,8 @@ def MTManager_DrawChart(df):
             )
         return apds
 
-    def plot_chart(sub_df, title):
+    def plot_chart(sub_df, title, filename):
         apds = build_addplots(sub_df)
-
         fig, axes = mpf.plot(sub_df,
                              type='candle',
                              style='charles',
@@ -172,14 +168,16 @@ def MTManager_DrawChart(df):
         except:
             pass
 
-        plt.show()
+        filename = "Asset/Log/ChartImage/" + filename
+        fig.savefig(filename)
+        plt.close(fig)
 
-    # === 全体チャート ===
-    plot_chart(df, 'USD/JPY - MA + RSI + MACD + Trend + LSTM Forecast（全体）')
+    # 全体チャート
+    plot_chart(df, 'USD/JPY - 全体チャート（LSTM含む）', 'chart_full.png')
 
-    # === 直近30日チャート ===
+    # 直近30日チャート
     if isinstance(df.index, pd.DatetimeIndex):
         start_date = df.index[-1] - pd.Timedelta(days=30)
         df_zoom = df.loc[start_date:df.index[-1]]
         if len(df_zoom) > 10:
-            plot_chart(df_zoom, 'USD/JPY - 直近30日チャート（LSTM予測付き）')
+            plot_chart(df_zoom, 'USD/JPY - 直近30日チャート', 'chart_zoom.png')

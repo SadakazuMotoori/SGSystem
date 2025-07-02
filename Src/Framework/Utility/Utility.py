@@ -1,8 +1,9 @@
 import os
 import datetime
 import smtplib
-from email.mime.text import MIMEText
+from email.mime.text      import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.image     import MIMEImage
 
 class AlertManager:
   def __init__(self, log_path="alerts.log"):
@@ -30,8 +31,7 @@ class AlertManager:
     elif predicted_close >= resistance:
       self.log_alert(f"🔺 予測終値がレジスタンスライン({resistance})を上回る予測: {predicted_close:.2f}")
 
-class NotificationManager :
-  # publicクラスメンバ変数
+class NotificationManager:
   loginID   = ""
   loginPass = ""
   myMailID  = ""
@@ -40,16 +40,27 @@ class NotificationManager :
     self.loginID    = os.getenv('GMAIL_ADDR')
     self.loginPass  = os.getenv('GMAIL_KEY')
     self.myMailID   = os.getenv('MY_GMAIL_ADDR')
-    print("[INFO] loginID = "   ,self.loginID)
-    print("[INFO] loginPass = " ,self.loginPass)
-    print("[INFO] myMailID = " ,self.myMailID)
-    
-  def send_email(self, subject, body):
+    print("[INFO] loginID = ", self.loginID)
+    print("[INFO] loginPass = ", self.loginPass)
+    print("[INFO] myMailID = ", self.myMailID)
+
+  def send_email(self, subject, body, attachments=None):
     msg = MIMEMultipart()
-    msg["From"]     = self.loginID
-    msg["To"]       = self.myMailID
-    msg["Subject"]  = subject
+    msg["From"] = self.loginID
+    msg["To"] = self.myMailID
+    msg["Subject"] = subject
     msg.attach(MIMEText(body, "plain"))
+
+    # 添付ファイルの処理
+    if attachments:
+      for file_path in attachments:
+        if not os.path.exists(file_path):
+          print(f"[WARN] 添付失敗: {file_path} が存在しません")
+          continue
+        with open(file_path, "rb") as f:
+          file_data = f.read()
+          img = MIMEImage(file_data, name=os.path.basename(file_path))
+          msg.attach(img)
 
     try:
       server = smtplib.SMTP("smtp.gmail.com", 587)
