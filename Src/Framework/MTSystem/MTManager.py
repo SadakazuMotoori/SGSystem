@@ -109,56 +109,77 @@ def MTManager_UpdateIndicators(days_back=600):
 # - RSI・MACD・サポレジを計算し、チャートを表示
 # ===================================================
 def MTManager_DrawChart(df):
-    # 追加指標
-    apds = [
-        mpf.make_addplot(df["Support"], panel=0, color='green', linestyle='--', width=1),
-        mpf.make_addplot(df["Resistance"], panel=0, color='red', linestyle='--', width=1),
-        mpf.make_addplot(df["RSI_14"], panel=1, color='purple', ylabel='RSI'),
-        mpf.make_addplot([30]*len(df), panel=1, color='gray', linestyle='--'),
-        mpf.make_addplot([70]*len(df), panel=1, color='gray', linestyle='--'),
-        mpf.make_addplot(df["MACD"], panel=2, color='blue', ylabel='MACD'),
-        mpf.make_addplot(df["MACD_signal"], panel=2, color='orange'),
-        mpf.make_addplot(df["MACD_diff"], panel=2, type='bar', color='dimgray', alpha=0.5)
-    ]
+    import matplotlib
+    import matplotlib.pyplot as plt
+    import mplfinance as mpf
+    import warnings
 
-    # チャート描画（Figure取得）
-    fig, axes = mpf.plot(df,
-                         type='candle',
-                         style='charles',
-                         mav=(5, 25, 75),
-                         volume=True,
-                         addplot=apds,
-                         panel_ratios=(4, 1, 1),
-                         title='USD/JPY - MA + RSI + MACD + Trend',
-                         ylabel='Price',
-                         ylabel_lower='Volume',
-                         figsize=(14, 10),
-                         returnfig=True)
+    # ▼ すべての警告を無効化
+    warnings.filterwarnings("ignore")
 
-    # ローソク足パネル
-    ax_price = axes[0]
+    # ▼ 日本語対応フォントを指定（環境により 'MS Gothic', 'Meiryo', 'Yu Gothic' 等を選択可）
+    matplotlib.rcParams['font.family'] = 'Meiryo'
 
-    # y軸調整用オフセット
-    offset = (df["high"].max() - df["low"].min()) * 0.01
+    def build_addplots(sub_df):
+        apds = [
+            mpf.make_addplot(sub_df["Support"], panel=0, color='green', linestyle='--', width=1),
+            mpf.make_addplot(sub_df["Resistance"], panel=0, color='red', linestyle='--', width=1),
+            mpf.make_addplot(sub_df["RSI_14"], panel=1, color='purple', ylabel='RSI'),
+            mpf.make_addplot([30]*len(sub_df), panel=1, color='gray', linestyle='--'),
+            mpf.make_addplot([70]*len(sub_df), panel=1, color='gray', linestyle='--'),
+            mpf.make_addplot(sub_df["MACD"], panel=2, color='blue', ylabel='MACD'),
+            mpf.make_addplot(sub_df["MACD_signal"], panel=2, color='orange'),
+            mpf.make_addplot(sub_df["MACD_diff"], panel=2, type='bar', color='dimgray', alpha=0.5)
+        ]
+        if "LSTM_Predicted" in sub_df.columns:
+            apds.append(
+                mpf.make_addplot(sub_df["LSTM_Predicted"], panel=0, color='darkorange', marker='X', markersize=10)
+            )
+        return apds
 
-    # ===============================
-    # トレンドラベルを矢印で描画する
-    # ===============================
-    for i in range(len(df)):
-        label = df["Trend_Label"].iloc[i]
+    def plot_chart(sub_df, title):
+        apds = build_addplots(sub_df)
 
-        if label == "uptrend":
-            price = df["low"].iloc[i] * 0.995
-            ax_price.scatter([i], [price], marker='^', color='green', s=80, zorder=5)
-            # print(f"[PLOT] {df.index[i].date()} ↑ {price:.2f}")
-        elif label == "downtrend":
-            price = df["high"].iloc[i] * 1.005
-            ax_price.scatter([i], [price], marker='v', color='red', s=80, zorder=5)
-            # print(f"[PLOT] {df.index[i].date()} ↓ {price:.2f}")
+        fig, axes = mpf.plot(sub_df,
+                             type='candle',
+                             style='charles',
+                             mav=(5, 25, 75),
+                             volume=True,
+                             addplot=apds,
+                             panel_ratios=(4, 1, 1),
+                             title=title,
+                             ylabel='Price',
+                             ylabel_lower='Volume',
+                             figsize=(14, 10),
+                             returnfig=True)
 
-    # y軸の表示範囲を調整
-    ax_price.set_ylim(df["low"].min() - 3 * offset, df["high"].max() + 3 * offset)
+        ax_price = axes[0]
+        offset = (sub_df["high"].max() - sub_df["low"].min()) * 0.01
 
-    # レイアウト調整
-    plt.tight_layout()
-    plt.show()
+        for i in range(len(sub_df)):
+            label = sub_df["Trend_Label"].iloc[i]
+            if label == "uptrend":
+                price = sub_df["low"].iloc[i] * 0.995
+                ax_price.scatter([i], [price], marker='^', color='green', s=80, zorder=5)
+            elif label == "downtrend":
+                price = sub_df["high"].iloc[i] * 1.005
+                ax_price.scatter([i], [price], marker='v', color='red', s=80, zorder=5)
+
+        ax_price.set_ylim(sub_df["low"].min() - 3 * offset, sub_df["high"].max() + 3 * offset)
+
+        try:
+            plt.tight_layout()
+        except:
+            pass
+
+        plt.show()
+
+    # === 全体チャート ===
+    plot_chart(df, 'USD/JPY - MA + RSI + MACD + Trend + LSTM Forecast（全体）')
+
+    # === 直近30日チャート ===
+    if isinstance(df.index, pd.DatetimeIndex):
+        start_date = df.index[-1] - pd.Timedelta(days=30)
+        df_zoom = df.loc[start_date:df.index[-1]]
+        if len(df_zoom) > 10:
+            plot_chart(df_zoom, 'USD/JPY - 直近30日チャート（LSTM予測付き）')

@@ -2,6 +2,8 @@ from Framework.MTSystem.MTManager           import MTManager_Initialize , MTMana
 from Framework.ForecastSystem.LSTMModel     import LSTMModel_PredictLSTM
 
 from Framework.Utility.Utility              import NotificationManager
+import pandas as pd
+import numpy as np
 
 def main():
     _enableActual   = False
@@ -14,38 +16,28 @@ def main():
         _enableTrade = False
         quit()
 
-#   notifier = NotificationManager()
-#   notifier.send_email("【SGSystem通知】テストメール","ルークより：これはGmailによる自動通知テストだ。")
-
     # ===================================================
     # 実戦実行
     # ===================================================
     if _enableActual:
-        # ===================================================
-        # ②PhaseA（トレンド確認）
-        # ===================================================
         if _enableTrade:
-            # インジケータ取得（ついでにトレンド情報も取得）
             df, trend_signal = MTManager_UpdateIndicators()
 
-            # シグナル発生：買い候補/売り候補としてLSTMへ
             if (trend_signal == "uptrend") or (trend_signal == "downtrend"):
                 print("[INFO] シグナル発生 = ",trend_signal)
 
-                # ===================================================
-                # ③PhaseB（LSTMモデル実行：翌日の値を予測）
-                # ===================================================
-                df = LSTMModel_PredictLSTM(df,True)
+                predicted_price, df = LSTMModel_PredictLSTM(df, False)
+
+                # ▼ 翌日の行を追加し、予測値をプロット用に記録
+                next_date = df.index[-1] + pd.Timedelta(days=1)
+                df.loc[next_date] = df.iloc[-1]  # ダミー行（コピー）
+                df["LSTM_Predicted"] = np.nan
+                df.at[next_date, "LSTM_Predicted"] = predicted_price
 
             else:
                 print("[INFO] トレンドシグナルなし → LSTMスキップ")
                 _enableTrade = False
 
-            # ===================================================
-            # ④チャート描画（トレンドラベル含む）
-            # ===================================================
-            # df_zoom = df.loc["2023-06-01":"2023-10-15"]
-            # df = df.loc["2024-08-01":"2024-11-15"]
             MTManager_DrawChart(df)
 
     # ===================================================
@@ -53,15 +45,14 @@ def main():
     # ===================================================
     else:
         if _enableTrade:
-            # インジケータ取得（ついでにトレンド情報も取得）
             df, trend_signal = MTManager_UpdateIndicators()
+            predicted_price, df = LSTMModel_PredictLSTM(df, False)
 
-            # LSTMモデル実行：予測
-            df = LSTMModel_PredictLSTM(df,True)
+            next_date = df.index[-1] + pd.Timedelta(days=1)
+            df.loc[next_date] = df.iloc[-1]
+            df["LSTM_Predicted"] = np.nan
+            df.at[next_date, "LSTM_Predicted"] = predicted_price
 
-            # チャート描画（トレンドラベル含む）
-            # df = df.loc["2023-06-01":"2023-10-15"]
-            # df = df.loc["2024-08-01":"2024-11-15"]
             MTManager_DrawChart(df)
 
     print("==========SGSystem End==========")

@@ -9,14 +9,11 @@ from keras.layers           import LSTM, Dense, Dropout
 # ===================================================
 # LSTMモデルの学習・予測
 # - 入力: 特徴量付きDataFrame（df）
-# - 出力: 翌日の終値予測値（1ステップ）
+# - 出力: 翌日の終値予測値（1ステップ）と更新済みdf
 # ===================================================
 def LSTMModel_PredictLSTM(df, show_plot=False):
     print("[INFO] LSTM Phase開始")
 
-    # ===================================================
-    # 特徴量選定（過去60日分を使って翌日の終値を予測）
-    # ===================================================
     sequence_length = 120
     FEATURES = [
         "close", "volume", "SMA_20", "SMA_50", "RSI_14",
@@ -28,29 +25,23 @@ def LSTMModel_PredictLSTM(df, show_plot=False):
     df_feat = df[FEATURES].copy().dropna()
     df_target = df["close"].shift(-1).dropna()
 
-    # 同期処理
     min_len = min(len(df_feat), len(df_target))
     df_feat, df_target = df_feat[:min_len], df_target[:min_len]
 
-    # 特徴量とターゲットを個別にスケーリング
     feature_scaler = MinMaxScaler()
     target_scaler = MinMaxScaler()
 
     X_scaled = feature_scaler.fit_transform(df_feat)
     y_scaled = target_scaler.fit_transform(df_target.values.reshape(-1, 1))
 
-    # シーケンス化（120ステップ）
     X, y = [], []
     for i in range(sequence_length, len(X_scaled)):
         X.append(X_scaled[i-sequence_length:i])
-        y.append(y_scaled[i])  # y もスケーリング後を使用
+        y.append(y_scaled[i])
 
     X, y = np.array(X), np.array(y)
     print(f"[INFO] 学習データ: {X.shape}, 正解ラベル: {y.shape}")
 
-    # ===================================================
-    # モデル構築（2層LSTM + Dropout）
-    # ===================================================
     model = Sequential()
     model.add(LSTM(units=64, return_sequences=True, input_shape=(X.shape[1], X.shape[2])))
     model.add(Dropout(0.2))
@@ -61,9 +52,6 @@ def LSTMModel_PredictLSTM(df, show_plot=False):
     model.compile(optimizer='adam', loss='mean_squared_error')
     model.fit(X, y, epochs=30, batch_size=32, verbose=0)
 
-    # ===================================================
-    # 予測と評価（逆スケーリングしてから評価）
-    # ===================================================
     y_pred_scaled = model.predict(X)
     y_true = target_scaler.inverse_transform(y)
     y_pred = target_scaler.inverse_transform(y_pred_scaled)
@@ -77,9 +65,6 @@ def LSTMModel_PredictLSTM(df, show_plot=False):
     print(f"MAE:  {mae:.4f}")
     print(f"R^2:  {r2:.4f}")
 
-    # ===================================================
-    # 可視化（希望時のみ）
-    # ===================================================
     if show_plot:
         plt.figure(figsize=(12, 5))
         plt.plot(y_true, label="True")
@@ -90,13 +75,10 @@ def LSTMModel_PredictLSTM(df, show_plot=False):
         plt.tight_layout()
         plt.show()
 
-    # ===================================================
-    # 直近の予測を返す（[-1]）
-    # ===================================================
     latest_sequence = X_scaled[-sequence_length:]
     latest_sequence = np.expand_dims(latest_sequence, axis=0)
     predicted_scaled = model.predict(latest_sequence)[0][0]
     predicted_price = target_scaler.inverse_transform([[predicted_scaled]])[0][0]
     print(f"[予測] 翌日の終値: {predicted_price:.3f}")
 
-    return predicted_price
+    return predicted_price, df
