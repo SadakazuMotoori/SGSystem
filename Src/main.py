@@ -3,10 +3,14 @@ from Framework.ForecastSystem.LSTMModel     import LSTMModel_PredictLSTM
 
 from Framework.Utility.Utility              import NotificationManager
 from Framework.Utility.Utility              import AlertManager
-import pandas as pd
-import numpy as np
+
+import MetaTrader5  as mt5
+import pandas       as pd
+import numpy        as np
 
 def main():
+    # 15分足で起動
+    _timeFrame      = mt5.TIMEFRAME_M15
     _enableActual   = False
     _enableTrade    = True
     print("==========SGSystem Start==========")
@@ -28,7 +32,7 @@ def main():
         # ===================================================
         if _enableTrade:
             # インジケータ取得（ついでにトレンド情報も取得）
-            df, trend_signal = MTManager_UpdateIndicators()
+            df, trend_signal = MTManager_UpdateIndicators(_timeFrame)
             
             # シグナル発生：買い候補/売り候補としてLSTMへ
             if (trend_signal == "uptrend") or (trend_signal == "downtrend"):
@@ -44,7 +48,7 @@ def main():
                 df = df.iloc[:-1]
 
                 # --- Step 3: LSTM予測
-                predicted_prices, df = LSTMModel_PredictLSTM(df, False)
+                predicted_prices, df = LSTMModel_PredictLSTM(df, _timeFrame, False)
 
                 # --- Step 4: 形成中ローソク足を復元（次の日付で）
                 forming_date = df.index[-1] + pd.Timedelta(days=1)
@@ -63,7 +67,7 @@ def main():
                 # ===================================================
                 # ③チャート描画（トレンドラベル含む）
                 # ===================================================
-                MTManager_DrawChart(df)
+                MTManager_DrawChart(df, _timeFrame)
 
                 # ===================================================
                 # ④通知処理
@@ -97,7 +101,7 @@ def main():
             # ===================================================
             # ①PhaseA（トレンド確認）
             # ===================================================
-            df, trend_signal = MTManager_UpdateIndicators()
+            df, trend_signal = MTManager_UpdateIndicators(_timeFrame)
             
             # ===================================================
             # ②PhaseB（LSTMモデル実行：翌日の値を予測）
@@ -109,7 +113,7 @@ def main():
             df = df.iloc[:-1]
 
             # --- Step 3: LSTM予測
-            predicted_prices, df = LSTMModel_PredictLSTM(df, False)
+            predicted_prices, df = LSTMModel_PredictLSTM(df, _timeFrame, False)
 
             # --- Step 4: 形成中ローソク足を復元（次の日付で）
             forming_date = df.index[-1] + pd.Timedelta(days=1)
@@ -128,7 +132,7 @@ def main():
             # ===================================================
             # ③チャート描画（トレンドラベル含む）
             # ===================================================
-            MTManager_DrawChart(df)
+            MTManager_DrawChart(df, _timeFrame)
 
 
             # ===================================================

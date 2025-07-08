@@ -35,11 +35,18 @@ def MTManager_Initialize():
     print("[INFO] MT5接続成功")
     return True
 
-def MTManager_UpdateIndicators(days_back=600):
+def MTManager_UpdateIndicators(timeFrame = mt5.TIMEFRAME_D1):
+
+    # LONG(日足)バージョン
+    if timeFrame == mt5.TIMEFRAME_D1:
+        _days_back=600
+    # SHORT(15分足)バージョン
+    else:
+        _days_back=3000
     print("[INFO] インジケータ更新と学習開始")
 
     # MT5からローソク足データを取得（最新からdays_back件分）
-    rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_D1, 0, days_back)
+    rates = mt5.copy_rates_from_pos(symbol, timeFrame, 0, _days_back)
     if rates is None or len(rates) == 0:
         print("[ERROR] データ取得失敗")
         return None
@@ -87,7 +94,18 @@ def MTManager_UpdateIndicators(days_back=600):
     # ===================================================
     # チャート描画用トレンドラベルを追記
     # ===================================================
-    df = SignalEngine_PhaseA_Filter(df, period=60, slope_threshold=0.005, adx_threshold=20, verbose=False)
+    # LONG(日足)バージョン
+    if timeFrame == mt5.TIMEFRAME_D1:
+        _period             = 60
+        _slope_threshold    = 0.005
+        _adx_threshold      = 20
+    # SHORT(15分足)バージョン
+    else:
+        _period             = 45
+        _slope_threshold    = 0.0015
+        _adx_threshold      = 20
+
+    df = SignalEngine_PhaseA_Filter(df, _period, _slope_threshold, _adx_threshold, verbose=False)
 
     # ===================================================
     # 前日のトレンドラベルを確認
@@ -108,7 +126,7 @@ def MTManager_UpdateIndicators(days_back=600):
 # - 最新日から過去へ指定数分取得（営業日ベース）
 # - RSI・MACD・サポレジを計算し、チャートを表示
 # ===================================================
-def MTManager_DrawChart(df):
+def MTManager_DrawChart(df, timeFrame = mt5.TIMEFRAME_D1):
     import matplotlib
     import matplotlib.pyplot as plt
     import mplfinance as mpf
@@ -179,12 +197,23 @@ def MTManager_DrawChart(df):
         fig.savefig(filename)
         plt.close(fig)
 
-    # 全体チャート
-    plot_chart(df, 'USD/JPY - 全体チャート（LSTM含む）', 'chart_full.png')
+    
+    if timeFrame == mt5.TIMEFRAME_D1:
+        # 全体チャート
+        plot_chart(df, 'USD/JPY - 全体チャート（LSTM含む）', 'chart_full.png')
 
-    # 直近30日チャート
-    if isinstance(df.index, pd.DatetimeIndex):
-        start_date = df.index[-1] - pd.Timedelta(days=30)
-        df_zoom = df.loc[start_date:df.index[-1]]
-        if len(df_zoom) > 10:
-            plot_chart(df_zoom, 'USD/JPY - 直近30日チャート', 'chart_zoom.png')
+        # 直近チャート
+        if isinstance(df.index, pd.DatetimeIndex):
+            start_date  = df.index[-1] - pd.Timedelta(days=30)
+            df_zoom     = df.loc[start_date:df.index[-1]]
+    else:
+        # 全体チャート
+        df_zoom = df.iloc[-200:]
+        plot_chart(df_zoom, 'USD/JPY - 全体チャート（LSTM含む）', 'chart_full.png')
+
+        # 直近チャート
+        if isinstance(df.index, pd.DatetimeIndex):
+            df_zoom = df.iloc[-48:]
+
+    if len(df_zoom) > 10:
+        plot_chart(df_zoom, 'USD/JPY - 直近30日チャート', 'chart_zoom.png')

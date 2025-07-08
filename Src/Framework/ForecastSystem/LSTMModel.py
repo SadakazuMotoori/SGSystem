@@ -1,4 +1,5 @@
 import numpy                as np
+import  MetaTrader5         as mt5
 import matplotlib.pyplot    as plt
 
 from sklearn.preprocessing  import MinMaxScaler
@@ -11,11 +12,18 @@ from keras.layers           import LSTM, Dense, Dropout
 # - 入力: 特徴量付きDataFrame（df）
 # - 出力: 翌日の終値予測値（1ステップ）と更新済みdf
 # ===================================================
-def LSTMModel_PredictLSTM(df, show_plot=False):
+def LSTMModel_PredictLSTM(df, timeFrame = mt5.TIMEFRAME_D1, show_plot = False):
     print("[INFO] LSTM Phase開始")
 
-    sequence_length = 120
-    prediction_steps = 5  # ← 5日後まで
+    # LONG(日足)バージョン
+    if timeFrame == mt5.TIMEFRAME_D1:
+        _sequence_length    = 120
+        _prediction_steps   = 5  # ← 5日後まで
+    # SHORT(15分足)バージョン
+    else:
+        _sequence_length    = 48
+        _prediction_steps   = 5  # ← 5日後まで
+
     FEATURES = [
         "close", "volume", "SMA_20", "SMA_50", "RSI_14",
         "MACD", "MACD_signal", "MACD_diff",
@@ -35,9 +43,9 @@ def LSTMModel_PredictLSTM(df, show_plot=False):
 
     # シーケンスとターゲットを構築（マルチステップ）
     X, y = [], []
-    for i in range(sequence_length, len(X_scaled) - prediction_steps):
-        X.append(X_scaled[i-sequence_length:i])
-        y.append(y_scaled[i:i+prediction_steps].flatten())
+    for i in range(_sequence_length, len(X_scaled) - _prediction_steps):
+        X.append(X_scaled[i-_sequence_length:i])
+        y.append(y_scaled[i:i+_prediction_steps].flatten())
 
     X, y = np.array(X), np.array(y)
     print(f"[INFO] 学習データ: {X.shape}, 正解ラベル: {y.shape}")
@@ -48,7 +56,7 @@ def LSTMModel_PredictLSTM(df, show_plot=False):
     model.add(Dropout(0.2))
     model.add(LSTM(units=32))
     model.add(Dropout(0.2))
-    model.add(Dense(prediction_steps))  # 出力5個
+    model.add(Dense(_prediction_steps))  # 出力5個
 
     model.compile(optimizer='adam', loss='mean_squared_error')
     model.fit(X, y, epochs=30, batch_size=32, verbose=0)
@@ -78,7 +86,7 @@ def LSTMModel_PredictLSTM(df, show_plot=False):
         plt.show()
 
     # 最新シーケンスから未来5日間を予測
-    latest_sequence = X_scaled[-sequence_length:]
+    latest_sequence = X_scaled[-_sequence_length:]
     latest_sequence = np.expand_dims(latest_sequence, axis=0)
     future_pred_scaled = model.predict(latest_sequence)[0]
     future_pred = target_scaler.inverse_transform(future_pred_scaled.reshape(-1, 1)).flatten()
