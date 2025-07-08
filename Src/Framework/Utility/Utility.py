@@ -9,14 +9,14 @@ class AlertManager:
   def __init__(self, log_path="alerts.log"):
     self.log_path = log_path
     if not os.path.exists(self.log_path):
-      with open(self.log_path, "w") as f:
+      with open(self.log_path, "w", encoding="utf-8") as f:
         f.write("=== Alert Log Started ===\n")
 
   def log_alert(self, message: str):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     log_msg = f"[{timestamp}] {message}"
     print(log_msg)
-    with open(self.log_path, "a") as f:
+    with open(self.log_path, "a", encoding="utf-8") as f:
       f.write(log_msg + "\n")
 
   def check_rsi_alert(self, latest_rsi: float, overbought: float = 70.0, oversold: float = 30.0):

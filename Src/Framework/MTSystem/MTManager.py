@@ -157,15 +157,15 @@ def MTManager_DrawChart(df):
                              returnfig=True)
 
         ax_price = axes[0]
-        offset = (sub_df["high"].max() - sub_df["low"].min()) * 0.01
+        offset = (sub_df["high"].max() - sub_df["low"].min()) * 0.005  # 0.5%幅
 
         for i in range(len(sub_df)):
             label = sub_df["Trend_Label"].iloc[i]
             if label == "uptrend":
-                price = sub_df["low"].iloc[i] * 0.995
+                price = sub_df["low"].iloc[i] - offset
                 ax_price.scatter([i], [price], marker='^', color='green', s=80, zorder=5)
             elif label == "downtrend":
-                price = sub_df["high"].iloc[i] * 1.005
+                price = sub_df["high"].iloc[i] + offset
                 ax_price.scatter([i], [price], marker='v', color='red', s=80, zorder=5)
 
         ax_price.set_ylim(sub_df["low"].min() - 3 * offset, sub_df["high"].max() + 3 * offset)
